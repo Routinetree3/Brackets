@@ -8,6 +8,7 @@
 
 class UTextBlock;
 class UProgressBar;
+class UImage;
 
 UCLASS()
 class BRACKETS_API UCharacterHUDWidget : public UUserWidget
@@ -32,4 +33,22 @@ public:
 
 	UPROPERTY(meta = (BindWidget))
 		UProgressBar* ShieldBar;
+
+	UPROPERTY(meta = (BindWidget))
+		UImage* PrimaryIcon;
+
+	UPROPERTY(meta = (BindWidget))
+		UImage* SecondaryIcon;
+
+	UPROPERTY(meta = (BindWidget))
+		UImage* LethalSlot1;
+
+	UPROPERTY(meta = (BindWidget))
+		UImage* LethalSlot2;
+
+	UPROPERTY(meta = (BindWidget))
+		UImage* NonLethalSlot1;
+
+	UPROPERTY(meta = (BindWidget))
+		UImage* NonLethalSlot2;
 };

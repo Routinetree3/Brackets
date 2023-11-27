@@ -29,5 +29,6 @@ void UBracketsAnimInstance::NativeUpdateAnimation(float DeltaTime)
 	AO_Pitch = BracketsCharacter->GetAO_Pitch();
 
 	bUseFABRIK = BracketsCharacter->GetCombatState() != ECombatState::ECS_Reloading;
+	bIsCrouched = BracketsCharacter->bIsCrouched;
 
 }

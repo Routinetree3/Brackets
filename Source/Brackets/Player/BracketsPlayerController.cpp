@@ -12,9 +12,12 @@
 
 #include "Components/TextBlock.h"
 #include "Components/ProgressBar.h"
+#include "Components/Image.h"
 
 #include "Kismet/GameplayStatics.h"
 #include "Brackets/Components/CombatComponent.h"
+#include "Brackets/Weapons/Weapon.h"
+#include "Brackets/Weapons/ThrowableProjectile.h"
 
 #include "Brackets/BracketsCharacter.h"
 #include "Brackets/Player/BracketsPlayerState.h"
@@ -204,6 +207,13 @@ void ABracketsPlayerController::HandleControllerRoundStart()
 	if (BracketsCharacter)
 	{
 		BracketsCharacter->GetCharacterMovement()->DisableMovement();
+
+		if (BracketsCharacter->GetCombat())
+		{
+			BracketsCharacter->GetCombat()->DropEquippedWeapon(true);
+			BracketsCharacter->GetCombat()->DropEquippedWeapon(false);
+			BracketsCharacter->GetCombat()->ClearThrowables();
+		}
 	}
 
 	if (BracketsCharacter && !BracketsPlayerState->GetIsDead())
@@ -487,6 +497,167 @@ void ABracketsPlayerController::SetHUDAmmoCarried(int32 Ammo)
 		FString AmmoText = FString::Printf(TEXT("%d"), Ammo);
 		BracketsCharacterHUD->CharacterHUDWidget->AmmoCarried->SetText(FText::FromString(AmmoText));
 	}
+}
+
+void ABracketsPlayerController::SetLethalHUDIcon(TArray<TSubclassOf<AThrowableProjectile>> LethalArray)
+{
+	BracketsCharacterHUD = BracketsCharacterHUD == nullptr ? Cast<ABracketsCharacterHUD>(GetHUD()) : BracketsCharacterHUD;
+	bool bHUDValid = BracketsCharacterHUD &&
+		BracketsCharacterHUD->CharacterHUDWidget &&
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1 &&
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2;
+	if (bHUDValid)
+	{
+		if (LethalArray.IsValidIndex(0))
+		{
+			AThrowableProjectile* Lethal = LethalArray[0].GetDefaultObject();
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1->SetBrushFromTexture(Lethal->GetSilhouette());
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1->SetOpacity(1);
+		}
+		else
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1->SetBrushFromTexture(nullptr);
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1->SetOpacity(0);
+		}
+		if (LethalArray.IsValidIndex(1))
+		{
+			AThrowableProjectile* Lethal = LethalArray[1].GetDefaultObject();
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2->SetBrushFromTexture(Lethal->GetSilhouette());
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2->SetOpacity(1);
+		}
+		else
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2->SetBrushFromTexture(nullptr);
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2->SetOpacity(0);
+		}
+	}
+
+	/*if (LethalIconArray.Num() < 1)
+	{
+		UTexture2D* TempTexture = LethalIconArray[0];
+		LethalIconArray[0] = LethalIconArray[1];
+		LethalIconArray[1] = TempTexture;
+	}
+	BracketsCharacterHUD = BracketsCharacterHUD == nullptr ? Cast<ABracketsCharacterHUD>(GetHUD()) : BracketsCharacterHUD;
+	bool bHUDValid = BracketsCharacterHUD &&
+		BracketsCharacterHUD->CharacterHUDWidget &&
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1 &&
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2;
+	if (bHUDValid)
+	{
+		if (LethalIconArray.IsValidIndex(0))
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1->SetBrushFromTexture(LethalIconArray[0]);
+		}
+		if (LethalIconArray.IsValidIndex(1))
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2->SetBrushFromTexture(LethalIconArray[1]);
+		}
+	}*/
+}
+
+void ABracketsPlayerController::SetNonLethalHUDIcon(TArray<TSubclassOf<AThrowableProjectile>> NonLethalArray)
+{
+	BracketsCharacterHUD = BracketsCharacterHUD == nullptr ? Cast<ABracketsCharacterHUD>(GetHUD()) : BracketsCharacterHUD;
+	bool bHUDValid = BracketsCharacterHUD &&
+		BracketsCharacterHUD->CharacterHUDWidget &&
+		BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot1 &&
+		BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot2;
+	if (bHUDValid)
+	{
+		if (NonLethalArray.IsValidIndex(0))
+		{
+			AThrowableProjectile* NonLethal = NonLethalArray[0].GetDefaultObject();
+			BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot1->SetBrushFromTexture(NonLethal->GetSilhouette());
+			BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot1->SetOpacity(1);
+		}
+		else
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot1->SetBrushFromTexture(nullptr);
+			BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot1->SetOpacity(0);
+		}
+		if (NonLethalArray.IsValidIndex(1))
+		{
+			AThrowableProjectile* NonLethal = NonLethalArray[1].GetDefaultObject();
+			BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot2->SetBrushFromTexture(NonLethal->GetSilhouette());
+			BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot2->SetOpacity(1);
+		}
+		else
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot2->SetBrushFromTexture(nullptr);
+			BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot2->SetOpacity(0);
+		}
+	}
+}
+
+void ABracketsPlayerController::SetPrimaryHUDIcon(UTexture2D* Silhouette)
+{
+	BracketsCharacterHUD = BracketsCharacterHUD == nullptr ? Cast<ABracketsCharacterHUD>(GetHUD()) : BracketsCharacterHUD;
+	bool bHUDValid = BracketsCharacterHUD &&
+		BracketsCharacterHUD->CharacterHUDWidget &&
+		BracketsCharacterHUD->CharacterHUDWidget->PrimaryIcon;
+	if (bHUDValid)
+	{
+		if (Silhouette)
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->PrimaryIcon->SetBrushFromTexture(Silhouette);
+			BracketsCharacterHUD->CharacterHUDWidget->PrimaryIcon->SetOpacity(1);
+		}
+		else
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->PrimaryIcon->SetBrushFromTexture(nullptr);
+			BracketsCharacterHUD->CharacterHUDWidget->PrimaryIcon->SetOpacity(0);
+		}
+	}
+}
+
+void ABracketsPlayerController::SetSecondaryHUDIcon(UTexture2D* Silhouette)
+{
+	BracketsCharacterHUD = BracketsCharacterHUD == nullptr ? Cast<ABracketsCharacterHUD>(GetHUD()) : BracketsCharacterHUD;
+	bool bHUDValid = BracketsCharacterHUD &&
+		BracketsCharacterHUD->CharacterHUDWidget &&
+		BracketsCharacterHUD->CharacterHUDWidget->SecondaryIcon;
+	if (bHUDValid)
+	{
+		if (Silhouette)
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->SecondaryIcon->SetBrushFromTexture(Silhouette);
+			BracketsCharacterHUD->CharacterHUDWidget->SecondaryIcon->SetOpacity(1);
+		}
+		else
+		{
+			BracketsCharacterHUD->CharacterHUDWidget->SecondaryIcon->SetBrushFromTexture(nullptr);
+			BracketsCharacterHUD->CharacterHUDWidget->SecondaryIcon->SetOpacity(0);
+		}
+	}
+}
+
+void ABracketsPlayerController::RemoveHUDWeaponIcons()
+{
+	BracketsCharacterHUD = BracketsCharacterHUD == nullptr ? Cast<ABracketsCharacterHUD>(GetHUD()) : BracketsCharacterHUD;
+	bool bHUDValid = BracketsCharacterHUD &&
+		BracketsCharacterHUD->CharacterHUDWidget->PrimaryIcon &&
+		BracketsCharacterHUD->CharacterHUDWidget->SecondaryIcon &&
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1 &&
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2 &&
+		BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot1 &&
+		BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot2;
+	if (bHUDValid)
+	{
+		BracketsCharacterHUD->CharacterHUDWidget->PrimaryIcon->SetBrushFromTexture(nullptr);
+		BracketsCharacterHUD->CharacterHUDWidget->PrimaryIcon->SetOpacity(0);
+		BracketsCharacterHUD->CharacterHUDWidget->SecondaryIcon->SetBrushFromTexture(nullptr);
+		BracketsCharacterHUD->CharacterHUDWidget->SecondaryIcon->SetOpacity(0);
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1->SetBrushFromTexture(nullptr);
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot1->SetOpacity(0);
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2->SetBrushFromTexture(nullptr);
+		BracketsCharacterHUD->CharacterHUDWidget->LethalSlot2->SetOpacity(0);
+		BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot1->SetBrushFromTexture(nullptr);
+		BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot1->SetOpacity(0);
+		BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot2->SetBrushFromTexture(nullptr);
+		BracketsCharacterHUD->CharacterHUDWidget->NonLethalSlot2->SetOpacity(0);
+	}
+
 }
 
 void ABracketsPlayerController::SetHUDHealth(float Health, float MaxHealth)

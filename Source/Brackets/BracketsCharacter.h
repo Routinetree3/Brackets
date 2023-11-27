@@ -58,11 +58,9 @@ class ABracketsCharacter : public ACharacter
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input, meta=(AllowPrivateAccess = "true"))
 	class UInputAction* MoveAction;
-
 	
 public:
 	ABracketsCharacter();
-
 	virtual void PostInitializeComponents() override;
 
 	UPROPERTY(Replicated)
@@ -75,6 +73,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* LookAction;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* CrouchAction;
+
 	/** Reload Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* ReloadAction;
@@ -82,6 +83,18 @@ public:
 	/** EquipAction*/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* EquipAction;
+
+	/** PrimarySwitch*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+		class UInputAction* PrimarySwitch;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+		class UInputAction* SecondarySwitch;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+		class UInputAction* CycleSwitch;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+		class UInputAction* SwitchLethal;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+		class UInputAction* SwitchNonLethal;
 
 	/** Menu Action*/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
@@ -97,7 +110,11 @@ public:
 	/** Fire Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 		class UInputAction* AimAction;
-
+	/** Throw Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+		class UInputAction* ThrowLethalAction;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+		class UInputAction* ThrowNonLethalAction;
 
 	void FireButtonPressed(const FInputActionValue& Value);
 	void FireButtonReleased(const FInputActionValue& Value);
@@ -107,6 +124,16 @@ public:
 	void EscMenuButtonPressed(const FInputActionValue& Value);
 	void ShowLeaderboardPressed(const FInputActionValue& Value);
 	void ShowLeaderboardReleased(const FInputActionValue& Value);
+	void CrouchPressed(const FInputActionValue& Value);
+	void CrouchReleased(const FInputActionValue& Value);
+	void ThrowLethalPressed(const FInputActionValue& Value);
+	void ThrowNonLethalPressed(const FInputActionValue& Value);
+
+	void PrimarySwitchButtonPressed(const FInputActionValue& Value);
+	void SecondarySwitchButtonPressed(const FInputActionValue& Value);
+	void SwitchLethalButtonPressed(const FInputActionValue& Value);
+	void SwitchNonLethalButtonPressed(const FInputActionValue& Value);
+	void CycleSwitchButtonPressed(const FInputActionValue& Value);
 
 	void ResetHealth();
 	void ApplyShield(bool isFull);   //// Redo the entire Shield System... not good that client has tells the server to apply shield
@@ -185,6 +212,10 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class UCombatComponent* Combat;
 
+	UPROPERTY(VisibleAnywhere, Category = Camera)
+	class USpringArmComponent* CameraBoom;
+	FVector ThirdMeshLocation;
+
 	UPROPERTY(EditAnywhere, Category = "Player Stats")
 		float MaxHealth = 100.f;
 	UPROPERTY(EditAnywhere, Category = "Shield Stats")
@@ -235,7 +266,7 @@ private:
 	UMaterialInstanceDynamic* DynamicAimEffectMaterialInstance;
 
 
-
+	bool bFireButtonPressed = false;
 	bool bHasNotTakenDamage = true;
 	bool bAimEffect = true;
 
@@ -258,6 +289,11 @@ public:
 	FORCEINLINE float GetAO_Pitch() const { return AO_Pitch; }
 	FORCEINLINE float GetAO_Yaw() const { return AO_Yaw; }
 
+	int32 GetCurrentLethals() const;
+	int32 GetCurrentNonLethals() const;
+	int32 GetMaxLethals() const;
+	int32 GetMaxNonLethals() const;
+	int32 GetMaxThrowables() const;
 	int32 GetRoundsFired() const;
 	ECombatState GetCombatState() const;
 };

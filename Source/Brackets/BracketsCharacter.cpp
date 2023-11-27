@@ -12,6 +12,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Components/WidgetComponent.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "Brackets/Components/CombatComponent.h"
 #include "Brackets/Character/BracketsAnimInstance.h"
 #include "Brackets/Player/BracketsPlayerController.h"
@@ -32,14 +33,20 @@ ABracketsCharacter::ABracketsCharacter()
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(55.f, 96.0f);
 		
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(GetCapsuleComponent());
+	CameraBoom->TargetArmLength = 10.f;
+	CameraBoom->bUsePawnControlRotation = true;
+
 	// Create a CameraComponent	
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-	FirstPersonCameraComponent->SetupAttachment(GetCapsuleComponent());
-	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
+	FirstPersonCameraComponent->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FirstPersonCameraComponent->bUsePawnControlRotation = true;
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("CombatComponent"));
 	Combat->SetIsReplicated(true);
+
+	GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
 
 	// Create a mesh component that will be used when being viewed from a '1st person' view (when controlling this pawn)
 	Mesh1P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh1P"));
@@ -49,12 +56,12 @@ ABracketsCharacter::ABracketsCharacter()
 	Mesh1P->CastShadow = false;
 	Mesh1P->SetRelativeLocation(FVector(-30.f, 0.f, -150.f));
 
-	Mesh3P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh3P"));
-	Mesh3P->SetOnlyOwnerSee(false);
-	Mesh3P->SetOwnerNoSee(true);
-	Mesh3P->SetupAttachment(GetCapsuleComponent());
-	Mesh3P->bCastDynamicShadow = true;
-	Mesh3P->CastShadow = true;
+	//GetMesh() = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh3P"));
+	GetMesh()->SetOnlyOwnerSee(false);
+	GetMesh()->SetOwnerNoSee(true);
+	GetMesh()->SetupAttachment(GetCapsuleComponent());
+	GetMesh()->bCastDynamicShadow = true;
+	GetMesh()->CastShadow = true;
 
 	ShieldTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("Timeline"));
 }
@@ -85,10 +92,10 @@ void ABracketsCharacter::BeginPlay()
 		OnTakeAnyDamage.AddDynamic(this, &ABracketsCharacter::ReciveDamage);
 	}
 
-	if (Mesh3P && Mesh3P->GetMaterial(GlassMaterialIndex))
+	if (GetMesh() && GetMesh()->GetMaterial(GlassMaterialIndex))
 	{
-		DynamicAimEffectMaterialInstance = UMaterialInstanceDynamic::Create(Mesh3P->GetMaterial(GlassMaterialIndex), this);
-		Mesh3P->SetMaterial(GlassMaterialIndex, DynamicAimEffectMaterialInstance);
+		DynamicAimEffectMaterialInstance = UMaterialInstanceDynamic::Create(GetMesh()->GetMaterial(GlassMaterialIndex), this);
+		GetMesh()->SetMaterial(GlassMaterialIndex, DynamicAimEffectMaterialInstance);
 	}
 
 	if (Mesh1P && Mesh1P->GetMaterial(0))
@@ -154,9 +161,23 @@ void ABracketsCharacter::SetupPlayerInputComponent(class UInputComponent* Player
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ABracketsCharacter::Move);
 		//Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ABracketsCharacter::Look);
+		//Crouching
+		EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Triggered, this, &ABracketsCharacter::CrouchPressed);
+		EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Completed, this, &ABracketsCharacter::CrouchReleased);
 		//Firing Weapon
 		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Triggered, this, &ABracketsCharacter::FireButtonPressed);
-		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Canceled, this, &ABracketsCharacter::FireButtonReleased);
+		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Completed, this, &ABracketsCharacter::FireButtonReleased);
+		//Throw Granade
+		EnhancedInputComponent->BindAction(ThrowLethalAction, ETriggerEvent::Triggered, this, &ABracketsCharacter::ThrowLethalPressed);
+		EnhancedInputComponent->BindAction(ThrowNonLethalAction, ETriggerEvent::Triggered, this, &ABracketsCharacter::ThrowNonLethalPressed);
+		//Switch Primary
+		EnhancedInputComponent->BindAction(PrimarySwitch, ETriggerEvent::Triggered, this, &ABracketsCharacter::PrimarySwitchButtonPressed);
+		EnhancedInputComponent->BindAction(SecondarySwitch, ETriggerEvent::Triggered, this, &ABracketsCharacter::SecondarySwitchButtonPressed);
+		//Cycle Switch
+		EnhancedInputComponent->BindAction(CycleSwitch, ETriggerEvent::Triggered, this, &ABracketsCharacter::CycleSwitchButtonPressed);
+		//Throw Switch
+		EnhancedInputComponent->BindAction(SwitchLethal, ETriggerEvent::Triggered, this, &ABracketsCharacter::SwitchLethalButtonPressed);
+		EnhancedInputComponent->BindAction(SwitchNonLethal, ETriggerEvent::Triggered, this, &ABracketsCharacter::SwitchNonLethalButtonPressed);
 		//Aim Weapon
 		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Triggered, this, &ABracketsCharacter::AimButtonPressed);
 		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Canceled, this, &ABracketsCharacter::AimButtonReleased);
@@ -189,6 +210,26 @@ void ABracketsCharacter::Move(const FInputActionValue& Value)
 		// add movement 
 		AddMovementInput(GetActorForwardVector(), MovementVector.Y);
 		AddMovementInput(GetActorRightVector(), MovementVector.X);
+	}
+}
+
+void ABracketsCharacter::CrouchPressed(const FInputActionValue& Value)
+{
+	if (bDisableGameplay) return;
+	
+	if (!GetCharacterMovement()->IsCrouching())
+	{
+		Crouch(true);
+		UE_LOG(LogTemp, Warning, TEXT("CrouchPressed"));
+	}
+}
+
+void ABracketsCharacter::CrouchReleased(const FInputActionValue& Value)
+{
+	if (GetCharacterMovement()->IsCrouching())
+	{
+		UnCrouch(true);
+		UE_LOG(LogTemp, Error, TEXT("CrouchReleased"));
 	}
 }
 
@@ -239,9 +280,19 @@ void ABracketsCharacter::AimOffset(float DeltaTime)
 void ABracketsCharacter::FireButtonPressed(const FInputActionValue& Value)
 {
 	if (bDisableGameplay) return;
-	if (Combat)
+
+	if (Combat && Combat->SelectedWeapon && !bFireButtonPressed)
 	{
-		Combat->FireButtonPressed(true);
+		bool bIsAutomatic = Combat->SelectedWeapon->bAutomatic;
+		if (bIsAutomatic)
+		{
+			Combat->FireButtonPressed(true);
+		}
+		else
+		{
+			Combat->FireButtonPressed(true);
+			bFireButtonPressed = true;
+		}
 	}
 }
 
@@ -250,6 +301,27 @@ void ABracketsCharacter::FireButtonReleased(const FInputActionValue& Value)
 	if (Combat)
 	{
 		Combat->FireButtonPressed(false);
+		bFireButtonPressed = false;
+	}
+}
+
+void ABracketsCharacter::ThrowLethalPressed(const FInputActionValue& Value)
+{
+	if (bDisableGameplay) return;
+	if (Combat)
+	{
+		Combat->ThrowLethal();
+		UE_LOG(LogTemp, Warning, TEXT("QuickThrowPressed"));
+	}
+}
+
+void ABracketsCharacter::ThrowNonLethalPressed(const FInputActionValue& Value)
+{
+	if (bDisableGameplay) return;
+	if (Combat)
+	{
+		Combat->ThrowNonLethal();
+		UE_LOG(LogTemp, Warning, TEXT("QuickThrowPressed"));
 	}
 }
 
@@ -299,6 +371,62 @@ void ABracketsCharacter::ReloadButtonPressed(const FInputActionValue& Value)
 	if (Combat)
 	{
 		Combat->Reload();
+	}
+}
+
+void ABracketsCharacter::PrimarySwitchButtonPressed(const FInputActionValue& Value)
+{
+	if (bDisableGameplay) return;
+	if (Combat)
+	{
+		Combat->SwapToPrimaryWeapon();
+	}
+}
+
+void ABracketsCharacter::SecondarySwitchButtonPressed(const FInputActionValue& Value)
+{
+	if (bDisableGameplay) return;
+	if (Combat)
+	{
+		Combat->SwapToSecondaryWeapon();
+	}
+}
+
+void ABracketsCharacter::SwitchLethalButtonPressed(const FInputActionValue& Value)
+{
+	if (Combat)
+	{
+		Combat->SwapLethals();
+		UE_LOG(LogTemp, Warning, TEXT("SwitchLethalButtonPressed"));
+	}
+}
+
+void ABracketsCharacter::SwitchNonLethalButtonPressed(const FInputActionValue& Value)
+{
+	if (Combat)
+	{
+		Combat->SwapNonLethals();
+		UE_LOG(LogTemp, Warning, TEXT("SwitchNonLethalButtonPressed"));
+	}
+}
+
+void ABracketsCharacter::CycleSwitchButtonPressed(const FInputActionValue& Value)
+{
+	//FVector2D DirectionVector = Value.Get<FVector2D>();
+	float DirectionVector = Value.Get<float>();
+	int32 DirectionInt = FMath::CeilToInt(DirectionVector);
+	UE_LOG(LogTemp, Warning, TEXT("DirectionVector: %d"), DirectionInt);
+	if (DirectionInt == 1 && Combat)
+	{
+		Combat->CycleEquipment(DirectionInt);
+	}
+	else if (DirectionInt == -1 && Combat)
+	{
+		Combat->CycleEquipment(DirectionInt);
+	}
+	else
+	{
+		return;
 	}
 }
 
@@ -376,7 +504,7 @@ FVector ABracketsCharacter::GetHitTarget() const
 
 bool ABracketsCharacter::IsWeaponEquipped()
 {
-	return (Combat && Combat->EquippedWeapon);
+	return (Combat && Combat->SelectedWeapon);
 }
 
 void ABracketsCharacter::ApplyShield(bool isFull)
@@ -445,7 +573,7 @@ void ABracketsCharacter::TimelineFinishedCallback()
 {
 	
 	GetMesh1P()->SetOverlayMaterial(NULL);
-	GetMesh3P()->SetOverlayMaterial(NULL);
+	GetMesh()->SetOverlayMaterial(NULL);
 }
 
 void ABracketsCharacter::ApplyShieldEffect(bool ShieldDestroyed)
@@ -469,7 +597,7 @@ void ABracketsCharacter::MulticastShieldEffect_Implementation(bool ShieldDestroy
 	{
 		DynamicShieldMaterialInstance = UMaterialInstanceDynamic::Create(ShieldMaterialInstance, this);
 		GetMesh1P()->SetOverlayMaterial(DynamicShieldMaterialInstance);
-		GetMesh3P()->SetOverlayMaterial(DynamicShieldMaterialInstance);	
+		GetMesh()->SetOverlayMaterial(DynamicShieldMaterialInstance);
 		if (ShieldTimeline && TimelineCurve)
 		{
 			if (ShieldDestroyed)
@@ -527,7 +655,7 @@ void ABracketsCharacter::ReciveDamage(AActor* DamagedActor, float Damage, const 
 			ShieldHealth = FMath::Clamp(ShieldHealth - Damage, 0.f, MaxShield);
 			ApplyShieldEffect(false);
 
-			//Mesh3P->SetOverlayMaterial(); Use this on both meshes with a timeline that will have the shield quickly fade in then fade out over a longer time
+			//GetMesh()->SetOverlayMaterial(); Use this on both meshes with a timeline that will have the shield quickly fade in then fade out over a longer time
 		}
 		UpdateHUDHealth();
 	}
@@ -562,7 +690,12 @@ void ABracketsCharacter::OnRep_Health()
 void ABracketsCharacter::Eliminated()
 {
 	bDisableGameplay = true;
-	Combat->DropEquippedWeapon();
+	if (Combat)
+	{
+		Combat->DropEquippedWeapon(true);
+		Combat->DropEquippedWeapon(false);
+		Combat->ClearThrowables();
+	}
 	class UBracketsAnimInstance* AnimInstance = Cast<UBracketsAnimInstance>(GetMesh1P()->GetAnimInstance());
 	if (AnimInstance)
 	{
@@ -580,10 +713,10 @@ void ABracketsCharacter::MulticastEliminated_Implementation()
 		Combat->FireButtonPressed(false);
 	}
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GetMesh3P()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetMesh1P()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetMesh1P()->SetVisibility(false);
-	GetMesh3P()->SetVisibility(false);
+	GetMesh()->SetVisibility(false);
 }
 
 void ABracketsCharacter::ServerAimEffect_Implementation(bool IsEnabled)
@@ -613,4 +746,34 @@ int32 ABracketsCharacter::GetRoundsFired() const
 {
 	if (Combat == nullptr) return 0;
 	return Combat->RoundsFired;
+}
+
+int32 ABracketsCharacter::GetCurrentLethals() const
+{
+	if (Combat == nullptr) return 0;
+	return Combat->CurrentLethals;
+}
+
+int32 ABracketsCharacter::GetCurrentNonLethals() const
+{
+	if (Combat == nullptr) return 0;
+	return Combat->CurrentNonLethals;
+}
+
+int32 ABracketsCharacter::GetMaxLethals() const
+{
+	if (Combat == nullptr) return 0;
+	return Combat->MaxLethals;
+}
+
+int32 ABracketsCharacter::GetMaxNonLethals() const
+{
+	if (Combat == nullptr) return 0;
+	return Combat->MaxNonLethals;
+}
+
+int32 ABracketsCharacter::GetMaxThrowables() const
+{
+	if (Combat == nullptr) return 0;
+	return Combat->MaxThowables;
 }

@@ -317,7 +317,8 @@ void AWeapon::OnRep_Owner()
 	}
 	else
 	{
-		SetHUDAmmo();
+		//SetHUDAmmo();
+		//UE_LOG(LogTemp, Error, TEXT("OnRep_Owner"))
 	}
 }
 
@@ -389,7 +390,6 @@ void AWeapon::ShaderPOV(int32 FOV)
 	{
 		DynamicGunMatierialInstance->SetScalarParameterValue(FName{ TEXT("FOV") }, FOV);
 	}
-	UE_LOG(LogTemp, Error, TEXT("%d"), FOV)
 }
 
 void AWeapon::SetMaterialView(bool isFirstPerson) // keep just in case

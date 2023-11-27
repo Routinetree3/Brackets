@@ -13,6 +13,7 @@ enum class EWeaponState : uint8
 {
 	EWS_Initial UMETA(DisplayName = "Initial State"),
 	EWS_Equipped UMETA(DisplayName = "Equipped"),
+	EWS_Holstered UMETA(DisplayName = "Holstered"),
 	EWS_Dropped UMETA(DisplayName = "Dropped"),
 
 	EWS_MAX UMETA(DisplayName = "Default Max")
@@ -20,6 +21,7 @@ enum class EWeaponState : uint8
 
 class UCurvefloat;
 class UCurveVector;
+class UTexture2D;
 
 UCLASS()
 class BRACKETS_API AWeapon : public AActor
@@ -41,7 +43,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = Combat)
 		float FireDelay = .15f;
 	UPROPERTY(EditAnywhere, Category = Combat)
-		bool bAutomatic = true;
+		bool bAutomatic = true; // create a get
 
 	// Ammo Public Functions
 	virtual void OnRep_Owner() override;
@@ -163,12 +165,20 @@ protected:
 	UTexture2D* AppliedPattern;
 	UPROPERTY()
 	UMaterialInstance* AppliedSkin;
+	UPROPERTY(EditAnywhere)
+	UTexture2D* Silhouette;
 
-	
+	//"SecondaryWeaponSocket", "FrontPrimaryHolster", "PrimaryHolster"
+	UPROPERTY(EditAnywhere)
+	FName SelectedHolster = FName("FrontPrimaryHolster");
+
+	UPROPERTY(EditAnywhere)
+		float Damage = 20.f;
+	UFUNCTION()
+		void SpendRound();
 
 private:
-	UPROPERTY(EditAnywhere)
-	float Damage = 20.f;
+
 
 	UPROPERTY(VisibleAnywhere, Category = "Weapon Properties")
 		USkeletalMeshComponent* WeaponMesh;
@@ -183,26 +193,14 @@ private:
 	UPROPERTY(EditAnywhere)
 		int32 MagCapacity;
 
-	UFUNCTION()
-	void SpendRound();
+
 	UFUNCTION()
 	void OnRep_Ammo();
 
 	UPROPERTY(VisibleAnywhere, Category = "Weapon Properties")
 		class UWidgetComponent* PickupWidget;
-
 	UPROPERTY(EditAnywhere, Category = "Weapon Properties")
 		class UAnimationAsset* FireAnimation;
-
-	UPROPERTY(EditAnywhere)
-		UParticleSystem* BeamParticles;
-	UPROPERTY(EditAnywhere, Category = "Weapon Scatter")
-		float DistanceToSphere = 800.f;
-	UPROPERTY(EditAnywhere, Category = "Weapon Scatter")
-		float SphereRadius = 75.f;
-	UPROPERTY(EditAnywhere, Category = "Weapon Scatter")
-		bool bUseScatter = false;
-
 	UPROPERTY(EditAnywhere, Category = "Weapon Properties")
 		bool bUsePickUp = true;
 	UPROPERTY()
@@ -242,6 +240,8 @@ public:
 	FORCEINLINE UCurveFloat* GetTimelineCurve() const { return TimelineCurve; }
 	FORCEINLINE	UCurveFloat* GetYawCurve() const { return YawCurve; }
 	FORCEINLINE	UCurveFloat* GetPitchCurve() const { return PitchCurve; }
+	FORCEINLINE FName GetHolsterLocation() const { return SelectedHolster; }
+	FORCEINLINE UTexture2D* GetSilhouette() const { return Silhouette; }
 
 	bool IsEmpty();
 };

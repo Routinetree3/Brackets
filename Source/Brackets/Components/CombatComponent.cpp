@@ -13,6 +13,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Gameframework/CharacterMovementComponent.h"
 #include "Brackets/Weapons/Weapon.h"
+#include "Brackets/Weapons/ThrowableProjectile.h"
 #include "Brackets/BracketsCharacter.h"
 #include "Brackets/Player/BracketsPlayerController.h"
 
@@ -30,8 +31,14 @@ UCombatComponent::UCombatComponent()
 void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(UCombatComponent, EquippedWeapon);
-	DOREPLIFETIME(UCombatComponent, EquippedWeapon3P);
+	DOREPLIFETIME(UCombatComponent, SelectedWeapon);
+	DOREPLIFETIME(UCombatComponent, SelectedWeapon3P);
+
+	DOREPLIFETIME(UCombatComponent, HolsteredPrimaryWeapon);
+	DOREPLIFETIME(UCombatComponent, HolsteredPrimaryWeapon3P);
+	DOREPLIFETIME(UCombatComponent, HolsteredSecondaryWeapon);
+	DOREPLIFETIME(UCombatComponent, HolsteredSecondaryWeapon3P);
+
 	DOREPLIFETIME(UCombatComponent, bAiming);
 	DOREPLIFETIME(UCombatComponent, CombatState);
 	DOREPLIFETIME_CONDITION(UCombatComponent, AmmoCarried, COND_OwnerOnly);
@@ -79,7 +86,7 @@ void UCombatComponent::Reload()
 
 void UCombatComponent::ServerReload_Implementation()
 {
-	if (Character == nullptr || EquippedWeapon == nullptr)
+	if (Character == nullptr || SelectedWeapon == nullptr)
 	{
 		return;
 	}
@@ -113,35 +120,35 @@ void UCombatComponent::FinishReloading()
 
 void UCombatComponent::UpdateAmmoValues()
 {
-	if (Character == nullptr || EquippedWeapon == nullptr)
+	if (Character == nullptr || SelectedWeapon == nullptr)
 	{
 		return;
 	}
 	int32 RealoadAmount = AmountToReload();
-	if (AmmoCarriedMap.Contains(EquippedWeapon->GetWeaponType()))
+	if (AmmoCarriedMap.Contains(SelectedWeapon->GetWeaponType()))
 	{
-		AmmoCarriedMap[EquippedWeapon->GetWeaponType()] -= RealoadAmount;
-		AmmoCarried = AmmoCarriedMap[EquippedWeapon->GetWeaponType()];
+		AmmoCarriedMap[SelectedWeapon->GetWeaponType()] -= RealoadAmount;
+		AmmoCarried = AmmoCarriedMap[SelectedWeapon->GetWeaponType()];
 	}
 	Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
 	if (Controller)
 	{
 		Controller->SetHUDAmmoCarried(AmmoCarried);
 	}
-	EquippedWeapon->AddAmmo(-RealoadAmount);
+	SelectedWeapon->AddAmmo(-RealoadAmount);
 }
 
 int32 UCombatComponent::AmountToReload()
 {
-	if (EquippedWeapon == nullptr)
+	if (SelectedWeapon == nullptr)
 	{
 		return 0;
 	}
-	int32 RoomInMag = EquippedWeapon->GetMagCapacity() - EquippedWeapon->GetAmmo();
+	int32 RoomInMag = SelectedWeapon->GetMagCapacity() - SelectedWeapon->GetAmmo();
 
-	if (AmmoCarriedMap.Contains(EquippedWeapon->GetWeaponType()))
+	if (AmmoCarriedMap.Contains(SelectedWeapon->GetWeaponType()))
 	{
-		int32 AmountCarried = AmmoCarriedMap[EquippedWeapon->GetWeaponType()];
+		int32 AmountCarried = AmmoCarriedMap[SelectedWeapon->GetWeaponType()];
 		int32 Least = FMath::Min(RoomInMag, AmountCarried);
 		return FMath::Clamp(RoomInMag, 0, Least);
 	}
@@ -170,67 +177,149 @@ void UCombatComponent::OnRep_CombatState()
 			Fire();
 		}
 		break;
+	case ECombatState::ECS_Throwing:
+		if (Character && !Character->IsLocallyControlled())
+		{
+			//Character->PlayThrowGrenadeMontage();
+		}
+		break;
 	}
 }
 
-void UCombatComponent::SpawnActor(TSubclassOf<class AWeapon> ActortoSpawnClass)
+void UCombatComponent::SpawnWeaponActor(TSubclassOf<class AWeapon> ActortoSpawnClass, bool bIsPrimary)
 {
 	if (Character->HasAuthority())
 	{
-		const USkeletalMeshSocket* HandSocket1P = Character->GetMesh1P()->GetSocketByName(FName("RightHandSocket"));
-		FTransform HandSocketTransform1P = HandSocket1P->GetSocketTransform(Character->GetMesh1P());
-		const USkeletalMeshSocket* HandSocket3P = Character->GetMesh3P()->GetSocketByName(FName("RightHandSocket"));
-		FTransform HandSocketTransform3P = HandSocket3P->GetSocketTransform(Character->GetMesh3P());
-		DropEquippedWeapon();
+		const USkeletalMeshSocket* SkeletalHandSocket1P = Character->GetMesh1P()->GetSocketByName(FName("RightHandSocket"));
+		FTransform HandSocketTransform1P = SkeletalHandSocket1P->GetSocketTransform(Character->GetMesh1P());
+		const USkeletalMeshSocket* SkeletalHandSocket3P = Character->GetMesh()->GetSocketByName(FName("RightHandSocket"));
+		FTransform HandSocketTransform3P = SkeletalHandSocket3P->GetSocketTransform(Character->GetMesh());
+
+		const USkeletalMeshSocket* SecondarySocket = Character->GetMesh1P()->GetSocketByName(FName("SecondaryWeaponSocket"));
+		FTransform SecondarySocketTransform = SecondarySocket->GetSocketTransform(Character->GetMesh());
+
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.Owner = Character;
 		SpawnParams.Instigator = Character;
 		UWorld* World = GetWorld();
+
 		if (World && Character)
 		{
-			AWeapon* WeaponToEquip = World->SpawnActor<AWeapon>(ActortoSpawnClass, HandSocketTransform1P, SpawnParams);
-			WeaponToEquip->SetMaterialView(true);
-			if (WeaponToEquip)
+			if (bIsPrimary)
 			{
-				EquipWeapon(WeaponToEquip);
-				AWeapon* WeaponToEquip3P = World->SpawnActor<AWeapon>(ActortoSpawnClass, HandSocketTransform3P, SpawnParams);
-				WeaponToEquip3P->SetMaterialView(false);
-				if (WeaponToEquip3P)
+				AWeapon* WeaponToEquip = World->SpawnActor<AWeapon>(ActortoSpawnClass, HandSocketTransform1P, SpawnParams);
+				WeaponToEquip->SetMaterialView(true);
+				if (WeaponToEquip)
 				{
-					EquipWeapon3P(WeaponToEquip3P);
+					AWeapon* WeaponToEquip3P = World->SpawnActor<AWeapon>(ActortoSpawnClass, HandSocketTransform3P, SpawnParams);
+					WeaponToEquip3P->SetMaterialView(false);
+					if (WeaponToEquip3P)
+					{
+						WeaponToEquip->SetOwner(Character);
+						WeaponToEquip3P->SetOwner(Character);
+						WeaponToEquip->GetWeaponMesh()->SetOnlyOwnerSee(true);
+						WeaponToEquip3P->GetWeaponMesh()->SetOwnerNoSee(true);
+						if (SelectedWeapon && SelectedWeapon3P && SelectedWeapon->GetWeaponType() == EWeaponType::EWT_SimiPistol)
+						{
+							//Swap Weapon
+							HolsterSecondaryWeapon();
+							EquipActiveWeapon(WeaponToEquip);
+							EquipActiveWeapon3P(WeaponToEquip3P);
+						}
+						else if (SelectedWeapon && SelectedWeapon3P && SelectedWeapon->GetWeaponType() != EWeaponType::EWT_SimiPistol)
+						{
+							DropEquippedWeapon(bIsPrimary);
+							EquipActiveWeapon(WeaponToEquip);
+							EquipActiveWeapon3P(WeaponToEquip3P);
+						}
+						else
+						{
+							EquipActiveWeapon(WeaponToEquip);
+							EquipActiveWeapon3P(WeaponToEquip3P);
+						}
+					}
+				}
+			}
+			else
+			{
+				AWeapon* SecondaryWeaponToEquip = World->SpawnActor<AWeapon>(ActortoSpawnClass, SecondarySocketTransform, SpawnParams);
+				SecondaryWeaponToEquip->SetMaterialView(true);
+				if (SecondaryWeaponToEquip)
+				{
+					AWeapon* SecondaryWeaponToEquip3P = World->SpawnActor<AWeapon>(ActortoSpawnClass, SecondarySocketTransform, SpawnParams);
+					SecondaryWeaponToEquip3P->SetMaterialView(false);
+					if (SecondaryWeaponToEquip3P)
+					{
+						SecondaryWeaponToEquip->SetOwner(Character);
+						SecondaryWeaponToEquip3P->SetOwner(Character);
+						SecondaryWeaponToEquip->GetWeaponMesh()->SetOnlyOwnerSee(true);
+						SecondaryWeaponToEquip3P->GetWeaponMesh()->SetOwnerNoSee(true);
+						if (SelectedWeapon == nullptr)
+						{
+							EquipActiveWeapon(SecondaryWeaponToEquip);
+							EquipActiveWeapon3P(SecondaryWeaponToEquip3P);
+						}
+						else if (HolsteredSecondaryWeapon)
+						{
+							DropEquippedWeapon(bIsPrimary);//droping secondary
+							HolsterSecondaryWeapon(SecondaryWeaponToEquip, SecondaryWeaponToEquip3P);
+						}
+						else
+						{
+							HolsterSecondaryWeapon(SecondaryWeaponToEquip, SecondaryWeaponToEquip3P);
+						}
+					}
 				}
 			}
 		}
 	}
 	else
 	{
-		ServerSpawnActor(ActortoSpawnClass);
+		ServerSpawnWeaponActor(ActortoSpawnClass, bIsPrimary);
+	}
+
+	if (bIsPrimary)
+	{
+		AWeapon* Primary = ActortoSpawnClass.GetDefaultObject();
+		Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
+		if (Controller)
+		{
+			Controller->SetPrimaryHUDIcon(Primary->GetSilhouette());
+		}
+	}
+	else
+	{
+		AWeapon* Secondary = ActortoSpawnClass.GetDefaultObject();
+		Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
+		if (Controller)
+		{
+			Controller->SetSecondaryHUDIcon(Secondary->GetSilhouette());
+		}
 	}
 }
 
-void UCombatComponent::ServerSpawnActor_Implementation(TSubclassOf<class AWeapon> ActortoSpawnClass)
+void UCombatComponent::ServerSpawnWeaponActor_Implementation(TSubclassOf<class AWeapon> ActortoSpawnClass, bool bIsPrimary)
 {
-	SpawnActor(ActortoSpawnClass);
+	SpawnWeaponActor(ActortoSpawnClass, bIsPrimary);
 }
 
 //Equip Weapons
-void UCombatComponent::EquipWeapon(AWeapon* WeaponToEquip)
+
+void UCombatComponent::EquipActiveWeapon(AWeapon* WeaponToEquip)
 {
 	if (Character == nullptr || WeaponToEquip == nullptr)
 	{
 		return;
 	}
-	//DropEquippedWeapon();
-	EquippedWeapon = WeaponToEquip;
-	EquippedWeapon->SetWeaponState(EWeaponState::EWS_Equipped);
-	AttachActorToRightHand(EquippedWeapon, true);
-	EquippedWeapon->SetOwner(Character);
-	EquippedWeapon->GetWeaponMesh()->SetOnlyOwnerSee(true);
-	EquippedWeapon->SetHUDAmmo();
 
-	if (AmmoCarriedMap.Contains(EquippedWeapon->GetWeaponType()))
+	SelectedWeapon = WeaponToEquip;
+	SelectedWeapon->SetWeaponState(EWeaponState::EWS_Equipped);
+	AttachActorToSocket(SelectedWeapon, true, HandSocket);
+	SelectedWeapon->SetHUDAmmo();
+
+	if (AmmoCarriedMap.Contains(SelectedWeapon->GetWeaponType()))
 	{
-		AmmoCarried = AmmoCarriedMap[EquippedWeapon->GetWeaponType()];
+		AmmoCarried = AmmoCarriedMap[SelectedWeapon->GetWeaponType()];
 	}
 
 	Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
@@ -240,32 +329,91 @@ void UCombatComponent::EquipWeapon(AWeapon* WeaponToEquip)
 	}
 }
 
-void UCombatComponent::EquipWeapon3P(AWeapon* WeaponToEquip)
+void UCombatComponent::EquipActiveWeapon3P(AWeapon* WeaponToEquip3P)
 {
-	if (Character == nullptr || WeaponToEquip == nullptr)
+	if (Character == nullptr || WeaponToEquip3P == nullptr)
 	{
 		return;
 	}
-	//DropEquippedWeapon();
-	EquippedWeapon3P = WeaponToEquip;
-	EquippedWeapon3P->SetWeaponState(EWeaponState::EWS_Equipped);
-	AttachActorToRightHand(EquippedWeapon3P, false);
-	EquippedWeapon3P->SetOwner(Character);
-	EquippedWeapon3P->GetWeaponMesh()->SetOwnerNoSee(true);
+	SelectedWeapon3P = WeaponToEquip3P;
+	SelectedWeapon3P->SetWeaponState(EWeaponState::EWS_Equipped);
+	AttachActorToSocket(SelectedWeapon3P, false, HandSocket3P);
 }
 
-void UCombatComponent::OnRep_EquippedWeapon()
+void UCombatComponent::HolsterPrimaryWeapon()
 {
-	if (EquippedWeapon && EquippedWeapon3P && Character)
+	if (Character == nullptr || SelectedWeapon->GetWeaponType() == EWeaponType::EWT_SimiPistol /*|| SelectedWeapon->GetWeaponType() == EWeaponType::EWT_Revolver*/)
 	{
-		EquippedWeapon->SetWeaponState(EWeaponState::EWS_Equipped);
-		EquippedWeapon3P->SetWeaponState(EWeaponState::EWS_Equipped);
-		AttachActorToRightHand(EquippedWeapon, true);
-		AttachActorToRightHand(EquippedWeapon3P, false);
+		return;
+	}
+	HolsteredPrimaryWeapon = SelectedWeapon;
+	HolsteredPrimaryWeapon3P = SelectedWeapon3P;
+	HolsteredPrimaryWeapon->SetWeaponState(EWeaponState::EWS_Holstered);
+	HolsteredPrimaryWeapon3P->SetWeaponState(EWeaponState::EWS_Holstered);
+	AttachActorToSocket(HolsteredPrimaryWeapon, true, HolsteredPrimaryWeapon->GetHolsterLocation());
+	AttachActorToSocket(HolsteredPrimaryWeapon3P, false, HolsteredPrimaryWeapon->GetHolsterLocation());
+}
+
+void UCombatComponent::HolsterPrimaryWeapon(AWeapon* WeaponToHolster, AWeapon* WeaponToHolster3P)
+{
+	
+	if (Character == nullptr || WeaponToHolster || WeaponToHolster3P || WeaponToHolster->GetWeaponType() == EWeaponType::EWT_SimiPistol /*|| WeaponToHolster->GetWeaponType() == EWeaponType::EWT_Revolver*/)
+	{
+		return;
+	}
+	HolsteredPrimaryWeapon = WeaponToHolster;
+	HolsteredPrimaryWeapon3P = WeaponToHolster3P;
+	HolsteredPrimaryWeapon->SetWeaponState(EWeaponState::EWS_Holstered);
+	HolsteredPrimaryWeapon3P->SetWeaponState(EWeaponState::EWS_Holstered);
+	AttachActorToSocket(HolsteredPrimaryWeapon, true, HolsteredPrimaryWeapon->GetHolsterLocation());
+	AttachActorToSocket(HolsteredPrimaryWeapon3P, false, HolsteredPrimaryWeapon->GetHolsterLocation());
+	
+}
+
+void UCombatComponent::HolsterSecondaryWeapon()
+{
+	if (Character == nullptr || SelectedWeapon->GetWeaponType() != EWeaponType::EWT_SimiPistol /*|| SelectedWeapon->GetWeaponType() != EWeaponType::EWT_Revolver*/)
+	{
+		return;
+	}
+	HolsteredSecondaryWeapon = SelectedWeapon;
+	HolsteredSecondaryWeapon3P = SelectedWeapon3P;
+	HolsteredSecondaryWeapon->SetWeaponState(EWeaponState::EWS_Holstered);
+	HolsteredSecondaryWeapon3P->SetWeaponState(EWeaponState::EWS_Holstered);
+	AttachActorToSocket(HolsteredSecondaryWeapon, true, HolsteredSecondaryWeapon->GetHolsterLocation());
+	AttachActorToSocket(HolsteredSecondaryWeapon3P, false, HolsteredSecondaryWeapon->GetHolsterLocation());
+}
+
+void UCombatComponent::HolsterSecondaryWeapon(AWeapon* WeaponToHolster, AWeapon* WeaponToHolster3P)
+{
+	
+	if (Character == nullptr || WeaponToHolster == nullptr || WeaponToHolster3P == nullptr || WeaponToHolster->GetWeaponType() != EWeaponType::EWT_SimiPistol /*|| WeaponToHolster->GetWeaponType() != EWeaponType::EWT_Revolver*/)
+	{
+		return;
+	}
+	HolsteredSecondaryWeapon = WeaponToHolster;
+	HolsteredSecondaryWeapon3P = WeaponToHolster3P;
+	HolsteredSecondaryWeapon->SetWeaponState(EWeaponState::EWS_Holstered);
+	HolsteredSecondaryWeapon3P->SetWeaponState(EWeaponState::EWS_Holstered);
+	AttachActorToSocket(HolsteredSecondaryWeapon, true, HolsteredSecondaryWeapon->GetHolsterLocation());
+	AttachActorToSocket(HolsteredSecondaryWeapon3P, false, HolsteredSecondaryWeapon->GetHolsterLocation());
+	
+}
+
+void UCombatComponent::OnRep_EquipActiveWeapon()
+{
+	if (SelectedWeapon && SelectedWeapon3P && Character)
+	{
+		SelectedWeapon->SetWeaponState(EWeaponState::EWS_Equipped);
+		SelectedWeapon3P->SetWeaponState(EWeaponState::EWS_Equipped);
+		AttachActorToSocket(SelectedWeapon, true, HandSocket);
+		AttachActorToSocket(SelectedWeapon3P, false, HandSocket3P);
 		Character->GetCharacterMovement()->bOrientRotationToMovement = false;
 		Character->bUseControllerRotationYaw = true;
-		EquippedWeapon->GetWeaponMesh()->SetOnlyOwnerSee(true);
-		EquippedWeapon3P->GetWeaponMesh()->SetOwnerNoSee(true);
+		SelectedWeapon->GetWeaponMesh()->SetOnlyOwnerSee(true);
+		SelectedWeapon3P->GetWeaponMesh()->SetOwnerNoSee(true);
+		SelectedWeapon->SetHUDAmmo();
+
 		/*if (EquippedWeapon->EquipSound)
 		{
 			UGameplayStatics::PlaySoundAtLocation(
@@ -277,16 +425,252 @@ void UCombatComponent::OnRep_EquippedWeapon()
 	}
 }
 
-void UCombatComponent::DropEquippedWeapon()
+void UCombatComponent::EquipThrowable(TSubclassOf<AThrowableProjectile> ThrowableToEquip, bool bIsLeathal)
 {
-	if (EquippedWeapon && EquippedWeapon3P)
+	if (Character == nullptr || ThrowableToEquip == nullptr) { return; }
+	if (CurrentNonLethals + CurrentLethals >= MaxThowables) { return; }
+	Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
+
+	UE_LOG(LogTemp, Error, TEXT("EquipThrowable"));
+
+	if (bIsLeathal && CurrentLethals <= MaxLethals)
 	{
-		EquippedWeapon->Dropped();
-		EquippedWeapon3P->Dropped();
+		switch (LethalSlotArrayIndex)
+		{
+		case 0:
+			LethalSlotArray.Insert(ThrowableToEquip, LethalSlotArrayIndex);
+			CurrentLethals++;
+			if (Controller)
+			{
+				Controller->SetLethalHUDIcon(LethalSlotArray);
+			}
+			break;
+		case 1:
+			LethalSlotArray.Insert(ThrowableToEquip, LethalSlotArrayIndex);
+			CurrentLethals++;
+			if (Controller)
+			{
+				Controller->SetLethalHUDIcon(LethalSlotArray);
+			}
+			break;
+		default:
+			break;
+		}
+		if (LethalSlotArrayIndex >= MaxLethals - 1)
+		{
+			LethalSlotArrayIndex = 0;
+		}
+		else
+		{
+			LethalSlotArrayIndex++;
+		}
+	}
+	else if (!bIsLeathal && CurrentNonLethals <= MaxNonLethals)
+	{
+		switch (NonLethalSlotArrayIndex)
+		{
+		case 0:
+			NonLethalSlotArray.Insert(ThrowableToEquip, NonLethalSlotArrayIndex);
+			CurrentNonLethals++;
+			if (Controller)
+			{
+				Controller->SetNonLethalHUDIcon(NonLethalSlotArray);
+			}
+			break;
+		case 1:
+			NonLethalSlotArray.Insert(ThrowableToEquip, NonLethalSlotArrayIndex);
+			CurrentNonLethals++;
+			if (Controller)
+			{
+				Controller->SetNonLethalHUDIcon(NonLethalSlotArray);
+			}
+			break;
+		default:
+			break;
+		}
+		if (NonLethalSlotArrayIndex >= MaxNonLethals - 1)
+		{
+			NonLethalSlotArrayIndex = 0;
+		}
+		else
+		{
+			NonLethalSlotArrayIndex++;
+		}
 	}
 }
 
-void UCombatComponent::AttachActorToRightHand(AActor* ActorToAttach, bool bMeshPerspective)
+void UCombatComponent::OnRep_HolsterPrimaryWeapon()
+{
+	HolsteredPrimaryWeapon->SetWeaponState(EWeaponState::EWS_Holstered);
+	HolsteredPrimaryWeapon3P->SetWeaponState(EWeaponState::EWS_Holstered);
+	HolsteredPrimaryWeapon->SetOwner(Character);
+	HolsteredPrimaryWeapon3P->SetOwner(Character);
+	HolsteredPrimaryWeapon->GetWeaponMesh()->SetOnlyOwnerSee(true);
+	HolsteredPrimaryWeapon3P->GetWeaponMesh()->SetOwnerNoSee(true);
+
+	AttachActorToSocket(HolsteredPrimaryWeapon, true, HolsteredPrimaryWeapon->GetHolsterLocation());
+	AttachActorToSocket(HolsteredPrimaryWeapon3P, false, HolsteredPrimaryWeapon->GetHolsterLocation());
+}
+
+void UCombatComponent::OnRep_HolsterSecondaryWeapon()
+{
+	HolsteredSecondaryWeapon->SetWeaponState(EWeaponState::EWS_Holstered);
+	HolsteredSecondaryWeapon3P->SetWeaponState(EWeaponState::EWS_Holstered);
+	HolsteredSecondaryWeapon->SetOwner(Character);
+	HolsteredSecondaryWeapon3P->SetOwner(Character);
+	HolsteredSecondaryWeapon->GetWeaponMesh()->SetOnlyOwnerSee(true);
+	HolsteredSecondaryWeapon3P->GetWeaponMesh()->SetOwnerNoSee(true);
+
+	AttachActorToSocket(HolsteredSecondaryWeapon, true, HolsteredSecondaryWeapon->GetHolsterLocation());
+	AttachActorToSocket(HolsteredSecondaryWeapon3P, false, HolsteredSecondaryWeapon->GetHolsterLocation());
+}
+
+void UCombatComponent::SwapToPrimaryWeapon()
+{
+	if (SelectedWeapon == nullptr || HolsteredPrimaryWeapon == nullptr) { return; }
+	if (Character && Character->HasAuthority() || SelectedWeapon->GetWeaponType() != EWeaponType::EWT_SimiPistol /*|| SelectedWeapon->GetWeaponType() != EWeaponType::EWT_Revolver*/)
+	{
+		//AWeapon* TempWeapon = SelectedWeapon;
+		//AWeapon* TempWeapon3P = SelectedWeapon3P;
+		HolsterSecondaryWeapon();
+		EquipActiveWeapon(HolsteredPrimaryWeapon);
+		EquipActiveWeapon3P(HolsteredPrimaryWeapon3P);
+	}
+	else
+	{
+		ServerSwapToPrimaryWeapon();
+	}
+}
+
+void UCombatComponent::ServerSwapToPrimaryWeapon_Implementation()
+{
+	SwapToPrimaryWeapon();
+}
+
+void UCombatComponent::SwapToSecondaryWeapon()
+{
+	if (SelectedWeapon == nullptr || HolsteredSecondaryWeapon == nullptr) { return; }
+	// if SelectedWeapon == EWeaponType::EWT_Knife // holster knife
+	if (Character && Character->HasAuthority() || SelectedWeapon->GetWeaponType() == EWeaponType::EWT_SimiPistol /*|| SelectedWeapon->GetWeaponType() == EWeaponType::EWT_Revolver*/)
+	{
+		//AWeapon* TempWeapon = SelectedWeapon;
+		//AWeapon* TempWeapon3P = SelectedWeapon3P;
+		HolsterPrimaryWeapon();
+		EquipActiveWeapon(HolsteredSecondaryWeapon);
+		EquipActiveWeapon3P(HolsteredSecondaryWeapon3P);
+	}
+	else
+	{
+		ServerSwapToSecondaryWeapon();
+	}
+}
+
+void UCombatComponent::ServerSwapToSecondaryWeapon_Implementation()
+{
+	SwapToSecondaryWeapon();
+}
+
+void UCombatComponent::SwapLethals()
+{
+	if (LethalSlotArray.Num() > 1)
+	{
+		if (LethalSlotArray.IsValidIndex(0) && LethalSlotArray.IsValidIndex(1))
+		{
+			TSubclassOf<AThrowableProjectile> TempGranade = LethalSlotArray[0];
+			LethalSlotArray[0] = LethalSlotArray[1];
+			LethalSlotArray[1] = TempGranade;
+		}
+
+		Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
+		if (Controller)
+		{
+			Controller->SetLethalHUDIcon(LethalSlotArray);
+		}
+		UE_LOG(LogTemp, Warning, TEXT("SwapLethals"));
+	}
+}
+
+void UCombatComponent::SwapNonLethals()
+{
+	if (NonLethalSlotArray.Num() > 1)
+	{
+		if (NonLethalSlotArray.IsValidIndex(0) && NonLethalSlotArray.IsValidIndex(1))
+		{
+			TSubclassOf<AThrowableProjectile> TempGranade = NonLethalSlotArray[0];
+			NonLethalSlotArray[0] = NonLethalSlotArray[1];
+			NonLethalSlotArray[1] = TempGranade;
+		}
+
+		Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
+		if (Controller)
+		{
+			Controller->SetNonLethalHUDIcon(NonLethalSlotArray);
+		}
+		UE_LOG(LogTemp, Warning, TEXT("SwapNonLethals"));
+	}
+}
+
+void UCombatComponent::CycleEquipment(int32 InputValue)
+{
+	CycleIndex += InputValue;
+	CycleIndex = FMath::Clamp(CycleIndex, 0, 3);
+
+	if (CycleIndex == 0 && InputValue == -1)
+	{
+		CycleIndex = 3;
+	}
+	switch (CycleIndex)
+	{
+	case 1:
+		SwapToPrimaryWeapon();
+		break;
+	case 2:
+		SwapToSecondaryWeapon();
+		break;
+	case 3:
+		UE_LOG(LogTemp, Warning, TEXT("Switch To Knife"));
+		break;
+	default:
+		break;
+	}
+	if (CycleIndex == 3 && InputValue == 1)
+	{
+		CycleIndex = 0;
+	}
+
+}
+
+void UCombatComponent::DropEquippedWeapon(bool bIsPrimary) ////// REDU!!!!
+{
+	if (SelectedWeapon && SelectedWeapon3P && bIsPrimary)
+	{
+		SelectedWeapon->Dropped();
+		SelectedWeapon3P->Dropped();
+	}
+	if (HolsteredSecondaryWeapon && HolsteredSecondaryWeapon3P && !bIsPrimary)
+	{
+		HolsteredSecondaryWeapon->Dropped();
+		HolsteredSecondaryWeapon3P->Dropped();
+	}
+}
+
+void UCombatComponent::ClearThrowables()
+{
+	LethalSlotArray.Empty();
+	NonLethalSlotArray.Empty();
+
+	LethalSlotArrayIndex = 0;
+	NonLethalSlotArrayIndex = 0;
+	CurrentLethals = 0;
+	CurrentNonLethals = 0;
+
+	if (Controller)
+	{
+		Controller->RemoveHUDWeaponIcons();
+	}
+}
+
+void UCombatComponent::AttachActorToSocket(AActor* ActorToAttach, bool bMeshPerspective, FName SocketName)
 {
 	if (Character)
 	{
@@ -294,9 +678,6 @@ void UCombatComponent::AttachActorToRightHand(AActor* ActorToAttach, bool bMeshP
 		{
 			if (ActorToAttach)
 			{ 
-
-				FName SocketName = (FName("RightHandSocket"));
-			
 				const FAttachmentTransformRules AttachmentTransformRules = FAttachmentTransformRules(EAttachmentRule::SnapToTarget, EAttachmentRule::SnapToTarget, EAttachmentRule::KeepRelative, false);
 				ActorToAttach->AttachToComponent(Character->GetMesh1P(), AttachmentTransformRules, SocketName);
 			}
@@ -305,33 +686,37 @@ void UCombatComponent::AttachActorToRightHand(AActor* ActorToAttach, bool bMeshP
 		{
 			if (ActorToAttach)
 			{
-
-				FName SocketName = (FName("RightHandSocket3P"));
-
 				const FAttachmentTransformRules AttachmentTransformRules = FAttachmentTransformRules(EAttachmentRule::SnapToTarget, EAttachmentRule::SnapToTarget, EAttachmentRule::KeepRelative, false);
-				ActorToAttach->AttachToComponent(Character->GetMesh3P(), AttachmentTransformRules, SocketName);
+				ActorToAttach->AttachToComponent(Character->GetMesh(), AttachmentTransformRules, SocketName);
 			}
 		}
-
 	}
 	else
 	{
-		ServerAttachActorToRightHand(ActorToAttach, bMeshPerspective);
+		ServerAttachActorToSocket(ActorToAttach, bMeshPerspective, SocketName);
 	}
 }
 
-void UCombatComponent::ServerAttachActorToRightHand_Implementation(AActor* ActorToAttach, bool bMeshPerspective)
+void UCombatComponent::ServerAttachActorToSocket_Implementation(AActor* ActorToAttach, bool bMeshPerspective, FName SocketName)
 {
-	AttachActorToRightHand(ActorToAttach, bMeshPerspective);
+	AttachActorToSocket(ActorToAttach, bMeshPerspective, SocketName);
 }
 
 //Fire Functions
 void UCombatComponent::FireButtonPressed(bool bPressed)
 {
 	bFireButtonPressed = bPressed;
-	if (bFireButtonPressed)
+	if (bFireButtonPressed && SelectedWeapon)
 	{
-		Fire();
+		if (SelectedWeapon->bAutomatic)
+		{
+			Fire();
+		}
+		else
+		{
+			Fire();
+			bFireButtonPressed = false;
+		}
 	}
 	if (!bFireButtonPressed)
 	{
@@ -345,7 +730,7 @@ void UCombatComponent::Fire()
 	{
 		RoundsFired++;
 		ServerFire(HitTarget);
-		if (EquippedWeapon)
+		if (SelectedWeapon)
 		{
 			bCanFire = false;
 			CrosshairShootingFactor = 0.75f;
@@ -360,7 +745,7 @@ void UCombatComponent::Fire()
 
 void UCombatComponent::StartFireTimer()
 {
-	if (EquippedWeapon == nullptr || Character == nullptr)
+	if (SelectedWeapon == nullptr || Character == nullptr)
 	{
 		return;
 	}
@@ -368,18 +753,18 @@ void UCombatComponent::StartFireTimer()
 		FireTimer,
 		this,
 		&UCombatComponent::FireTimerFinished,
-		EquippedWeapon->FireDelay
+		SelectedWeapon->FireDelay
 	);
 }
 
 void UCombatComponent::FireTimerFinished()
 {
-	if (EquippedWeapon == nullptr)
+	if (SelectedWeapon == nullptr)
 	{
 		return;
 	}
 	bCanFire = true;
-	if (bFireButtonPressed && EquippedWeapon->bAutomatic)
+	if (bFireButtonPressed && SelectedWeapon->bAutomatic)
 	{
 		Fire();
 	}
@@ -387,11 +772,11 @@ void UCombatComponent::FireTimerFinished()
 
 bool UCombatComponent::CanFire()
 {
-	if (EquippedWeapon == nullptr)
+	if (SelectedWeapon == nullptr)
 	{
 		return false;
 	}
-	return !EquippedWeapon->IsEmpty() && bCanFire && CombatState == ECombatState::ECS_Unoccupied;
+	return !SelectedWeapon->IsEmpty() && bCanFire && CombatState == ECombatState::ECS_Unoccupied;
 }
 
 void UCombatComponent::ServerFire_Implementation(const FVector_NetQuantize& TraceHitTarget)
@@ -401,14 +786,97 @@ void UCombatComponent::ServerFire_Implementation(const FVector_NetQuantize& Trac
 
 void UCombatComponent::MulticastFire_Implementation(const FVector_NetQuantize& TraceHitTarget)
 {
-	if (EquippedWeapon == nullptr)
+	if (SelectedWeapon == nullptr)
 	{
 		return;
 	}
 	if (Character && CombatState == ECombatState::ECS_Unoccupied)
 	{
 		//Character->PlayFireMontage(bAiming);
-		EquippedWeapon->Fire(TraceHitTarget, bAiming);
+		SelectedWeapon->Fire(TraceHitTarget, bAiming);
+	}
+}
+
+void UCombatComponent::ThrowLethal()
+{
+	//CombatState = ECombatState::ECS_Throwing;
+
+	if (LethalSlotArray.IsValidIndex(0))
+	{
+		ServerThrow(LethalSlotArray[0], true);
+		LethalSlotArray.RemoveAt(0);
+		Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
+		if (Controller)
+		{
+			Controller->SetLethalHUDIcon(LethalSlotArray);
+		}
+	}
+}
+
+void UCombatComponent::ThrowNonLethal()
+{
+	//CombatState = ECombatState::ECS_Throwing;
+
+	if (NonLethalSlotArray.IsValidIndex(0))
+	{
+		ServerThrow(NonLethalSlotArray[0], true);
+		if (NonLethalSlotArray.IsValidIndex(0))
+		{
+			NonLethalSlotArray.RemoveAt(0);
+			Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
+			if (Controller)
+			{
+				Controller->SetNonLethalHUDIcon(NonLethalSlotArray);
+			}
+		}
+	}
+}
+
+void UCombatComponent::ServerThrow_Implementation(TSubclassOf<AThrowableProjectile> ThrowableToThrow, bool bIsLethal)
+{
+	//CombatState = ECombatState::ECS_Throwing;
+	if (Character)
+	{
+		//Character->PlayThrowGrenadeMontage();
+	}
+	Throw(ThrowableToThrow);
+	if (bIsLethal)
+	{
+		CurrentLethals--;
+	}
+	else if (!bIsLethal)
+	{
+		CurrentNonLethals--;
+	}
+}
+
+void UCombatComponent::Throw(TSubclassOf<AThrowableProjectile> ThrowableToThrow)
+{
+	TSubclassOf<AThrowableProjectile> CurrentQucikThrowable = ThrowableToThrow;
+
+	UE_LOG(LogTemp, Warning, TEXT("Throw"));
+
+	if (Character && Character->HasAuthority())
+	{
+		const USkeletalMeshSocket* SkeletalLeftHandSocket = Character->GetMesh1P()->GetSocketByName(FName("ThrowSocket"));
+		const FTransform StartingLocation = SkeletalLeftHandSocket->GetSocketTransform(Character->GetMesh1P());
+
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = Character;
+		SpawnParams.Instigator = Character;
+		UWorld* World = GetWorld();
+
+		if (CurrentQucikThrowable)
+		{
+			if (World)
+			{
+				World->SpawnActor<AThrowableProjectile>(
+					CurrentQucikThrowable,
+					StartingLocation,
+					SpawnParams
+					);
+			}
+		}
 	}
 }
 
@@ -475,13 +943,13 @@ void UCombatComponent::SetHUDCrosshairs(float DeltaTime)
 		HUD = HUD == nullptr ? Cast<ABracketsCharacterHUD>(Controller->GetHUD()) : HUD;
 		if (HUD)
 		{
-			if (EquippedWeapon)
+			if (SelectedWeapon)
 			{
-				HUDPackage.CrosshairsCenter = EquippedWeapon->CrosshairsCenter;
-				HUDPackage.CrosshairsLeft = EquippedWeapon->CrosshairsLeft;
-				HUDPackage.CrosshairsRight = EquippedWeapon->CrosshairsRight;
-				HUDPackage.CrosshairsTop = EquippedWeapon->CrosshairsTop;
-				HUDPackage.CrosshairsBottom = EquippedWeapon->CrosshairsBottom;
+				HUDPackage.CrosshairsCenter = SelectedWeapon->CrosshairsCenter;
+				HUDPackage.CrosshairsLeft = SelectedWeapon->CrosshairsLeft;
+				HUDPackage.CrosshairsRight = SelectedWeapon->CrosshairsRight;
+				HUDPackage.CrosshairsTop = SelectedWeapon->CrosshairsTop;
+				HUDPackage.CrosshairsBottom = SelectedWeapon->CrosshairsBottom;
 			}
 			else
 			{
@@ -523,14 +991,14 @@ void UCombatComponent::SetHUDCrosshairs(float DeltaTime)
 
 void UCombatComponent::InterpFOV(float DeltaTime)
 {
-	if (EquippedWeapon == nullptr)
+	if (SelectedWeapon == nullptr)
 	{
 		return;
 	}
 	if (bAiming) // Fix Zoom In problem
 	{
-		CurrentFOV = FMath::FInterpTo(CurrentFOV, EquippedWeapon->GetZoomedFOV(), DeltaTime, EquippedWeapon->GetZoomInterpSpeed());
-		EquippedWeapon->ShaderPOV(CurrentFOV);
+		CurrentFOV = FMath::FInterpTo(CurrentFOV, SelectedWeapon->GetZoomedFOV(), DeltaTime, SelectedWeapon->GetZoomInterpSpeed());
+		SelectedWeapon->ShaderPOV(CurrentFOV);
 		if (Character->DynamicArmMatierialInstance)
 		{
 			Character->DynamicArmMatierialInstance->SetScalarParameterValue(FName{ TEXT("FOV") }, CurrentFOV);
@@ -540,7 +1008,7 @@ void UCombatComponent::InterpFOV(float DeltaTime)
 	else
 	{
 		CurrentFOV = FMath::FInterpTo(CurrentFOV, DefaultFOV, DeltaTime, ZoomInterpSpeed);
-		EquippedWeapon->ShaderPOV(CurrentFOV);
+		SelectedWeapon->ShaderPOV(CurrentFOV);
 		if (Character->DynamicArmMatierialInstance)
 		{
 			Character->DynamicArmMatierialInstance->SetScalarParameterValue(FName{ TEXT("FOV") }, CurrentFOV);
@@ -554,12 +1022,17 @@ void UCombatComponent::InterpFOV(float DeltaTime)
 
 void UCombatComponent::InitializeCarriedAmmo()
 {
-	AmmoCarriedMap.Emplace(EWeaponType::EWT_AssaultRifle, StartingARAmmo);
+	AmmoCarriedMap.Emplace(EWeaponType::EWT_Carbine, StartingCarbineAmmo);
+	AmmoCarriedMap.Emplace(EWeaponType::EWT_SMG, StartingSMGAmmo);
+	AmmoCarriedMap.Emplace(EWeaponType::EWT_BattleRifle, StartingBattleRifleAmmo);
+	AmmoCarriedMap.Emplace(EWeaponType::EWT_Shotgun, StartingShotgunAmmo);
+	AmmoCarriedMap.Emplace(EWeaponType::EWT_SimiPistol, StartingSimiPistolAmmo);
+	AmmoCarriedMap.Emplace(EWeaponType::EWT_SniperRifle, StartingSniperAmmo);
 }
 
 void UCombatComponent::SetAiming(bool bIsAiming)
 {
-	if (Character == nullptr || EquippedWeapon == nullptr)
+	if (Character == nullptr || SelectedWeapon == nullptr)
 	{
 		return;
 	}
@@ -580,3 +1053,4 @@ void UCombatComponent::ServerSetIsAiming_Implementation(bool bIsAiming)
 		Character->GetCharacterMovement()->MaxWalkSpeed = bIsAiming ? AimWalkSpeed : BaseWalkSpeed;
 	}
 }
+

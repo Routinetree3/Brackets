@@ -24,6 +24,13 @@ protected:
 
 	UFUNCTION(BlueprintCallable)
 	void PrimaryButtonClicked(TSubclassOf<AWeapon>SelectedWeapon);
+	UFUNCTION(BlueprintCallable)
+	void SecondaryButtonClicked(TSubclassOf<AWeapon>SelectedWeapon);
+
+	UFUNCTION(BlueprintCallable)
+		bool LethalButtonClicked(TSubclassOf<class AThrowableProjectile> SelectedThrowable);
+	UFUNCTION(BlueprintCallable)
+		bool NonLethalButtonClicked(TSubclassOf<class AThrowableProjectile> SelectedThrowable);
 
 	UFUNCTION(BlueprintCallable)
 	void ShieldButtonClicked(bool isFull);

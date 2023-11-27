@@ -6,6 +6,7 @@
 #include "Brackets/Components/CombatComponent.h"
 #include "Brackets/Player/BracketsPlayerController.h"
 #include "Components/Button.h"
+#include "Components/Image.h"
 #include "Brackets/Weapons/Weapon.h"
 
 bool UEquipmentSelectionWidget::Initialize()
@@ -20,13 +21,65 @@ bool UEquipmentSelectionWidget::Initialize()
 
 void UEquipmentSelectionWidget::PrimaryButtonClicked(TSubclassOf<AWeapon> SelectedWeapon)
 {
-	
-
 	Character = Character == nullptr ? Cast<ABracketsCharacter>(GetOwningPlayerPawn()) : Character;
 	if (Character && Character->GetCombat())
 	{
 		//later on put a check for match state to insure that this can only be applied during "Round Starts"
-		Character->GetCombat()->SpawnActor(SelectedWeapon);
+		Character->GetCombat()->SpawnWeaponActor(SelectedWeapon, true);
+	}
+}
+
+void UEquipmentSelectionWidget::SecondaryButtonClicked(TSubclassOf<AWeapon> SelectedWeapon)
+{
+	Character = Character == nullptr ? Cast<ABracketsCharacter>(GetOwningPlayerPawn()) : Character;
+	if (Character && Character->GetCombat())
+	{
+		//later on put a check for match state to insure that this can only be applied during "Round Starts"
+		Character->GetCombat()->SpawnWeaponActor(SelectedWeapon, false);
+	}
+}
+
+bool UEquipmentSelectionWidget::LethalButtonClicked(TSubclassOf<class AThrowableProjectile> SelectedThrowable)
+{
+	Character = Character == nullptr ? Cast<ABracketsCharacter>(GetOwningPlayerPawn()) : Character;
+	if (Character && Character->GetCombat())
+	{
+		if (Character->GetCurrentLethals() >= Character->GetMaxLethals() || 
+			Character->GetCurrentLethals() + Character->GetCurrentNonLethals() >= Character->GetMaxThrowables())
+		{
+			return false;
+		}
+		else
+		{
+			Character->GetCombat()->EquipThrowable(SelectedThrowable, true);
+			return true;
+		}
+	}
+	else
+	{
+		return false;
+	}
+}
+
+bool UEquipmentSelectionWidget::NonLethalButtonClicked(TSubclassOf<class AThrowableProjectile> SelectedThrowable)
+{
+	Character = Character == nullptr ? Cast<ABracketsCharacter>(GetOwningPlayerPawn()) : Character;
+	if (Character && Character->GetCombat())
+	{
+		if (Character->GetCurrentNonLethals() >= Character->GetMaxNonLethals() ||
+			Character->GetCurrentLethals() + Character->GetCurrentNonLethals() >= Character->GetMaxThrowables())
+		{
+			return false;
+		}
+		else
+		{
+			Character->GetCombat()->EquipThrowable(SelectedThrowable, false);
+			return true;
+		}
+	}
+	else
+	{
+		return false;
 	}
 }
 

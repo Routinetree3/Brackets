@@ -6,9 +6,11 @@
 #include "GameFramework/PlayerController.h"
 #include "BracketsPlayerController.generated.h"
 
-/**
- * 
- */
+class AThrowableProjectile;
+class ABracketsCharacterHUD;
+class UCharacterHUDWidget;
+class ABracketsSinglesGameMode;
+
 UCLASS()
 class BRACKETS_API ABracketsPlayerController : public APlayerController
 {
@@ -35,6 +37,11 @@ public:
 	void SetHUDRoundEnd(bool bHasWon);
 	void ShowHUDEscMenu(bool Pressed);
 	void ShowHUDLeaderBoard(bool Show, bool ShowMouse);
+	void SetLethalHUDIcon(TArray<TSubclassOf<AThrowableProjectile>> LethalArray);
+	void SetNonLethalHUDIcon(TArray<TSubclassOf<AThrowableProjectile>> NonLethalArray);
+	void SetPrimaryHUDIcon(UTexture2D* Silhouette);
+	void SetSecondaryHUDIcon(UTexture2D* Silhouette);
+	void RemoveHUDWeaponIcons();
 	void AddOvertime(float OvertimeAmount);
 
 	UFUNCTION(BlueprintImplementableEvent)
@@ -83,11 +90,11 @@ protected:
 
 private:
 	UPROPERTY()
-	class ABracketsCharacterHUD* BracketsCharacterHUD;
+	ABracketsCharacterHUD* BracketsCharacterHUD;
 	UPROPERTY()
-	class UCharacterHUDWidget* CharacterHUDWidget;
+	UCharacterHUDWidget* CharacterHUDWidget;
 	UPROPERTY()
-	class ABracketsSinglesGameMode* BracketsSinglesGameMode;
+	ABracketsSinglesGameMode* BracketsSinglesGameMode;
 
 	bool bInitializeCharacterHUDWidget = false;
 
