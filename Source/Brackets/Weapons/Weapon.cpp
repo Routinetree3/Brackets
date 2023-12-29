@@ -2,6 +2,7 @@
 
 
 #include "Weapon.h"
+#include "Brackets/Brackets.h"
 #include "Net/UnrealNetwork.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/SkeletalMeshSocket.h"
@@ -9,6 +10,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/TimelineComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Brackets/Components/LagCompComponent.h"
+#include "Components/BoxComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Animation/AnimationAsset.h"
 #include "Brackets/BracketsCharacter.h"
@@ -86,90 +89,125 @@ void AWeapon::Tick(float DeltaTime)
 
 void AWeapon::Fire(const FVector& HitTarget, bool IsAiming)
 {
-	if (FireAnimation)
-	{
-		WeaponMesh->PlayAnimation(FireAnimation, false);
-	}
-
-	bIsAiming = IsAiming;
-
-	if (RecoilTimeline && TimelineCurve)
-	{
-		AddRecoilImpulse();
-	}
-
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (OwnerPawn == nullptr)
 	{
 		return;
 	}
+	if (FireAnimation)
+	{
+		WeaponMesh->PlayAnimation(FireAnimation, false);
+	}
+	bIsAiming = IsAiming;
+	if (RecoilTimeline && TimelineCurve)
+	{
+		AddRecoilImpulse();
+	}
+
 	AController* InstigatorController = OwnerPawn->GetController();
 
 	const USkeletalMeshSocket* MuzzleSocket = GetWeaponMesh()->GetSocketByName("Muzzle");
-	if (MuzzleSocket)
+	BracketsOwnerCharacter = BracketsOwnerCharacter == nullptr ? Cast<ABracketsCharacter>(GetOwner()) : BracketsOwnerCharacter;
+	if (MuzzleSocket && BracketsOwnerCharacter)
 	{
-		//FTransform SocketTransform = MuzzleSocket->GetSocketTransform(GetWeaponMesh());
-		//FVector Start = SocketTransform.GetLocation();
-		BracketsOwnerCharacter = BracketsOwnerCharacter == nullptr ? Cast<ABracketsCharacter>(GetOwner()) : BracketsOwnerCharacter;
-		if (BracketsOwnerCharacter)
+		FVector Start = BracketsOwnerCharacter->GetFirstPersonCameraComponent()->GetComponentLocation();
+		FVector End = Start + (HitTarget - Start) * 1.05f;
+
+		FHitResult FireHit;
+		UWorld* World = GetWorld();
+
+		struct FCollisionQueryParams QueryParams;
+		QueryParams.AddIgnoredActor(BracketsOwnerCharacter);
+		QueryParams.AddIgnoredComponent(BracketsOwnerCharacter->GetHead());
+		if (World)
 		{
-			FVector Start = BracketsOwnerCharacter->GetFirstPersonCameraComponent()->GetComponentLocation();
-			//Start.X = Start.X * 1.01f;
-			FVector End = Start + (HitTarget - Start) * 1.01f;
+			World->LineTraceSingleByChannel(
+				FireHit,
+				Start,
+				End,
+				ECC_HitBox,
+				QueryParams
+			);
 
-			FHitResult FireHit;
-			UWorld* World = GetWorld();
+			DrawDebugLine(World, Start, End, FColor::Red, false, 5.f);
 
-			struct FCollisionQueryParams QueryParams;
-			QueryParams.AddIgnoredActor(BracketsOwnerCharacter);
-			if (World /* && HasAuthority()*/)
+			ABracketsCharacter* HitBracketsCharacter = Cast<ABracketsCharacter>(FireHit.GetActor());
+			if (FireHit.bBlockingHit)
 			{
-				World->LineTraceSingleByChannel(
-					FireHit,
-					Start,
-					End,
-					ECollisionChannel::ECC_Visibility,
-					QueryParams
-				);
-			
-				DrawDebugLine(World, Start, End, FColor::Red, false, 5.f);
-
-				ABracketsCharacter* BracketsCharacter = Cast<ABracketsCharacter>(FireHit.GetActor());
-				if (FireHit.bBlockingHit)
+				if (HitBracketsCharacter && InstigatorController)
 				{
-					if (BracketsCharacter && HasAuthority() && InstigatorController)
+					BracketsOwnerCharacter = BracketsOwnerCharacter == nullptr ? Cast<ABracketsCharacter>(OwnerPawn) : BracketsOwnerCharacter;
+					BracketsOwnerController = BracketsOwnerController == nullptr ? Cast<ABracketsPlayerController>(InstigatorController) : BracketsOwnerController;
+
+					bool bCauseAuthDamage = !bUseServerRewind || OwnerPawn->IsLocallyControlled();
+
+					//UE_LOG(LogTemp, Warning, TEXT("bCauseAuthDamage: %s"), (bCauseAuthDamage ? TEXT("true") : TEXT("false")));
+					//UE_LOG(LogTemp, Warning, TEXT("HasAuthority(): %s"), (HasAuthority() ? TEXT("true") : TEXT("false")));
+
+					if (HasAuthority() && bCauseAuthDamage)
 					{
-						UGameplayStatics::ApplyDamage(
-							BracketsCharacter,
-							Damage,
+						const FName BoxThatWasHit = FireHit.GetComponent()->GetFName();
+						UE_LOG(LogTemp, Error, TEXT("BoxThatWasHit: %s"), *BoxThatWasHit.ToString())
+						auto BoxHitInfo = BracketsOwnerCharacter->HitBoxes.Find(BoxThatWasHit);
+						float HitDamageRatio = 1;
+						if (BoxHitInfo)
+						{
+							HitDamageRatio = BoxHitInfo->DamageRatio; 
+						}
+						UGameplayStatics::ApplyDamage(    
+							HitBracketsCharacter,
+							Damage * HitDamageRatio,
 							InstigatorController,
 							this,
 							UDamageType::StaticClass()
 						);
-						UE_LOG(LogTemp, Warning, TEXT("ApplyDamage"))
+						UE_LOG(LogTemp, Warning, TEXT("ApplyDamage: %f"), Damage * HitDamageRatio)
 					}
-					if (ImpactParticles)
+					if (!HasAuthority() && bUseServerRewind) // for some reason !!! loosing authority when switching Weapons, firing secondary, then switching back
 					{
-						UGameplayStatics::SpawnEmitterAtLocation(
-							GetWorld(),
-							ImpactParticles,
-							FireHit.ImpactPoint,
-							FireHit.ImpactNormal.Rotation()
-						);
+						if (BracketsOwnerCharacter && BracketsOwnerController && BracketsOwnerCharacter->GetLagComp() && BracketsOwnerCharacter->IsLocallyControlled())
+						{
+							BracketsOwnerCharacter->GetLagComp()->ServerScoreRequest(
+								HitBracketsCharacter,
+								Start,
+								HitTarget,
+								BracketsOwnerController->GetServerTime() - BracketsOwnerController->SingleTripTime,
+								this
+							);
+						}
 					}
-					if (HitSound)
-					{
-						UGameplayStatics::PlaySoundAtLocation(
-							this,
-							HitSound,
-							FireHit.ImpactPoint
-						);
-					}
+					
 				}
 			}
+
+			End = Start + (HitTarget - Start) * 1.01f;
+			World->LineTraceSingleByChannel(
+				FireHit,
+				Start,
+				End,
+				ECC_Visibility,
+				QueryParams
+			);
+			if (ImpactParticles)
+			{
+				UGameplayStatics::SpawnEmitterAtLocation(
+					GetWorld(),
+					ImpactParticles,
+					FireHit.ImpactPoint,
+					FireHit.ImpactNormal.Rotation()
+				);
+			}
+			if (HitSound)
+			{
+				UGameplayStatics::PlaySoundAtLocation(
+					this,
+					HitSound,
+					FireHit.ImpactPoint
+				);
+			}
 		}
+		SpendRound();
 	}
-	SpendRound();
 }
 
 void AWeapon::AddRecoilImpulse()
@@ -252,6 +290,12 @@ void AWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 
 	DOREPLIFETIME(AWeapon, WeaponState);
 	DOREPLIFETIME(AWeapon, Ammo);
+	DOREPLIFETIME_CONDITION(AWeapon, bUseServerRewind, COND_OwnerOnly);
+}
+
+void AWeapon::OnPingTooHigh(bool bPingTooHigh)
+{
+	bUseServerRewind = !bPingTooHigh;
 }
 
 void AWeapon::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherbodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -339,13 +383,27 @@ void AWeapon::SetWeaponState(EWeaponState State)
 	switch (WeaponState)
 	{
 	case EWeaponState::EWS_Equipped:
+		//UE_LOG(LogTemp, Warning, TEXT("EWS_Equipped"))
+
 		ShowPickupWidget(false);
 		GetAreaSphere()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		WeaponMesh->SetSimulatePhysics(false);
 		WeaponMesh->SetEnableGravity(false);
 		WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+		BracketsOwnerCharacter = BracketsOwnerCharacter == nullptr ? Cast<ABracketsCharacter>(GetOwner()) : BracketsOwnerCharacter;
+		if (BracketsOwnerCharacter && bUseServerRewind)
+		{
+			BracketsOwnerController = BracketsOwnerController == nullptr ? Cast<ABracketsPlayerController>(BracketsOwnerCharacter->Controller) : BracketsOwnerController;
+			if (BracketsOwnerController && HasAuthority() && !BracketsOwnerController->HighPingDelegate.IsBound())
+			{
+				BracketsOwnerController->HighPingDelegate.AddDynamic(this, &AWeapon::OnPingTooHigh);
+			}
+		}
+
 		break;
 	case EWeaponState::EWS_Dropped:
+		//UE_LOG(LogTemp, Warning, TEXT("EWS_Dropped"))
 		GetAreaSphere()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		if (HasAuthority())
 		{
@@ -354,7 +412,33 @@ void AWeapon::SetWeaponState(EWeaponState State)
 		WeaponMesh->SetSimulatePhysics(true);
 		WeaponMesh->SetEnableGravity(true);
 		WeaponMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+		BracketsOwnerCharacter = BracketsOwnerCharacter == nullptr ? Cast<ABracketsCharacter>(GetOwner()) : BracketsOwnerCharacter;
+		if (BracketsOwnerCharacter && bUseServerRewind)
+		{
+			BracketsOwnerController = BracketsOwnerController == nullptr ? Cast<ABracketsPlayerController>(BracketsOwnerCharacter->Controller) : BracketsOwnerController;
+			if (BracketsOwnerController && HasAuthority() && BracketsOwnerController->HighPingDelegate.IsBound())
+			{
+				BracketsOwnerController->HighPingDelegate.RemoveDynamic(this, &AWeapon::OnPingTooHigh);
+			}
+		}
 		break;
+	case EWeaponState::EWS_Holstered:
+		//UE_LOG(LogTemp, Warning, TEXT("EWS_Holstered"))
+		GetAreaSphere()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		WeaponMesh->SetSimulatePhysics(false);
+		WeaponMesh->SetEnableGravity(false);
+		WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+		BracketsOwnerCharacter = BracketsOwnerCharacter == nullptr ? Cast<ABracketsCharacter>(GetOwner()) : BracketsOwnerCharacter;
+		if (BracketsOwnerCharacter && bUseServerRewind)
+		{
+			BracketsOwnerController = BracketsOwnerController == nullptr ? Cast<ABracketsPlayerController>(BracketsOwnerCharacter->Controller) : BracketsOwnerController;
+			if (BracketsOwnerController && HasAuthority() && BracketsOwnerController->HighPingDelegate.IsBound())
+			{
+				BracketsOwnerController->HighPingDelegate.RemoveDynamic(this, &AWeapon::OnPingTooHigh);
+			}
+		}
 	}
 }
 

@@ -98,6 +98,11 @@ protected:
 			int32 OtherbodyIndex
 		);
 
+	UPROPERTY()
+		class ABracketsCharacter* BracketsOwnerCharacter;
+	UPROPERTY()
+		class ABracketsPlayerController* BracketsOwnerController;
+
 	UPROPERTY(EditAnywhere)
 	class UParticleSystem* ImpactParticles;
 	UPROPERTY(EditAnywhere)
@@ -177,9 +182,12 @@ protected:
 	UFUNCTION()
 		void SpendRound();
 
+	UPROPERTY(Replicated, EditAnywhere)
+	bool bUseServerRewind = true;
+	UFUNCTION()
+	void OnPingTooHigh(bool bPingTooHigh);
+
 private:
-
-
 	UPROPERTY(VisibleAnywhere, Category = "Weapon Properties")
 		USkeletalMeshComponent* WeaponMesh;
 	UPROPERTY(VisibleAnywhere, Category = "Weapon Properties")
@@ -208,10 +216,6 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Weapon Skin")
 		UMaterialInstance* FirstPersonGunMatierialInstance;
 
-	UPROPERTY()
-	class ABracketsCharacter* BracketsOwnerCharacter;
-	UPROPERTY()
-	class ABracketsPlayerController* BracketsOwnerController;
 	UPROPERTY(EditAnywhere)
 		EWeaponType WeaponType;
 
@@ -242,6 +246,7 @@ public:
 	FORCEINLINE	UCurveFloat* GetPitchCurve() const { return PitchCurve; }
 	FORCEINLINE FName GetHolsterLocation() const { return SelectedHolster; }
 	FORCEINLINE UTexture2D* GetSilhouette() const { return Silhouette; }
+	FORCEINLINE float GetDamage() const { return Damage; }
 
 	bool IsEmpty();
 };

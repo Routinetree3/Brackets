@@ -38,6 +38,8 @@ public:
 
 	UFUNCTION()
 	void DropEquippedWeapon(bool bIsPrimary);
+	void DropLethal(TSubclassOf<class AThrowableProjectile> SelectedThrowable);
+	void DropNonLethal(TSubclassOf<class AThrowableProjectile> SelectedThrowable);
 	void ClearThrowables();
 	void SetAiming(bool bIsAiming);
 	void InitializeCarriedAmmo();
@@ -63,10 +65,18 @@ protected:
 	//Firing Functions
 	UFUNCTION()
 		void Fire();
-	UFUNCTION(Server, Reliable)
-		void ServerFire(const FVector_NetQuantize& TraceHitTarget);
+	void LocalFire(const FVector_NetQuantize& TraceHitTarget);
+	UFUNCTION(Server, Reliable, WithValidation)
+		void ServerFire(const FVector_NetQuantize& TraceHitTarget, float FireDelay);
 	UFUNCTION(NetMulticast, Reliable)
 		void MulticastFire(const FVector_NetQuantize& TraceHitTarget);
+
+	void LocalScatterFire(const TArray<FVector_NetQuantize>& TraceHitTargets);
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerScatterFire(const TArray<FVector_NetQuantize>& TraceHitTargets, float FireDelay);
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticasScatterFire(const TArray<FVector_NetQuantize>& TraceHitTargets);
+
 	UFUNCTION(Server, Reliable)
 		void ServerThrow(TSubclassOf<AThrowableProjectile> ThrowableToThrow, bool bIsLethal);
 
@@ -186,9 +196,6 @@ private:
 		AWeapon* HolsteredSecondaryWeapon;
 	UPROPERTY(ReplicatedUsing = OnRep_HolsterSecondaryWeapon)
 		AWeapon* HolsteredSecondaryWeapon3P;
-
-	int32 LethalSlotArrayIndex = 0;
-	int32 NonLethalSlotArrayIndex = 0;
 
 	int32 CurrentLethals = 0;
 	int32 CurrentNonLethals = 0;

@@ -16,7 +16,7 @@
 
 #include "Kismet/GameplayStatics.h"
 #include "Brackets/Components/CombatComponent.h"
-#include "Brackets/Weapons/Weapon.h"
+//#include "Brackets/Weapons/Weapon.h"
 #include "Brackets/Weapons/ThrowableProjectile.h"
 
 #include "Brackets/BracketsCharacter.h"
@@ -48,6 +48,7 @@ void ABracketsPlayerController::Tick(float DeltaTime)
 	CheckTimeSync(DeltaTime);
 	SetHUDTime();
 	PollInit();
+	CheckPing(DeltaTime);
 }
 
 void ABracketsPlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -100,6 +101,33 @@ void ABracketsPlayerController::CheckTimeSync(float DeltaTime)
 	}
 }
 
+void ABracketsPlayerController::CheckPing(float DeltaTime)
+{
+	HighPingRunningTime += DeltaTime;
+	if (HighPingRunningTime > CheckPingFrequency)
+	{
+		PlayerState = PlayerState == nullptr ? GetPlayerState<APlayerState>() : PlayerState;
+		if (PlayerState)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("PlayerState->GetPing() * 4: %d"), PlayerState->GetPing() * 4);
+			if (PlayerState->GetPing() * 4 > HighPingThreshold) // ping is compressed; it's actually ping / 4
+			{
+				ServerReportPingStatus(true);
+			}
+			else
+			{
+				ServerReportPingStatus(false);
+			}
+		}
+		HighPingRunningTime = 0.f;
+	}
+}
+
+void ABracketsPlayerController::ServerReportPingStatus_Implementation(bool bHighPing)
+{
+	HighPingDelegate.Broadcast(bHighPing);
+}
+
 void ABracketsPlayerController::ServerCheckMatchState_Implementation()
 {
 	BracketsSinglesGameMode = BracketsSinglesGameMode == nullptr ? Cast<ABracketsSinglesGameMode>(UGameplayStatics::GetGameMode(this)) : BracketsSinglesGameMode;
@@ -137,7 +165,8 @@ void ABracketsPlayerController::ServerRequestServerTime_Implementation(float Tim
 void ABracketsPlayerController::ClientReportServerTime_Implementation(float TimeOfClientRequest, float TimeServerRecivedClientRequest)
 {
 	float RoundTripTime = GetWorld()->GetTimeSeconds() - TimeOfClientRequest;
-	float CurrentServerTime = TimeServerRecivedClientRequest + (0.5f * RoundTripTime);
+	SingleTripTime = 0.5f * RoundTripTime;
+	float CurrentServerTime = TimeServerRecivedClientRequest + SingleTripTime;
 	ClientServerDelta = CurrentServerTime - GetWorld()->GetTimeSeconds();
 }
 
@@ -315,7 +344,6 @@ void ABracketsPlayerController::SetHUDTime()
 		{
 			ResetTime();
 		}
-		//PrepaireCountdown = (PrepaireTime + PreveusTimeElapsed ) - (GetServerTime() + LevelStartingTime); //old way
 		PrepaireCountdown = (PrepaireTime + PreveusTimeElapsed) - GetServerTime();
 		//UE_LOG(LogTemp, Error, TEXT("PrepaireCountdown: %f"), PrepaireCountdown);
 		//UE_LOG(LogTemp, Warning, TEXT("LevelStartingTime: %f"), LevelStartingTime);

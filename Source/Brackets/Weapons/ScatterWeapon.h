@@ -6,22 +6,22 @@
 #include "Weapon.h"
 #include "ScatterWeapon.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class BRACKETS_API AScatterWeapon : public AWeapon
 {
 	GENERATED_BODY()
 	
 public:
-	virtual void Fire(const FVector& HitTarget, bool IsAiming) override;
+	//virtual void Fire(const FVector& HitTarget, bool IsAiming) override;
+	virtual void FireScatter(const TArray<FVector_NetQuantize>& HitTargets, bool IsAiming);
+	//FVector TraceEndWithScatter(const FVector& HitTarget);
+	void FillScatteredHitTargets(const FVector& HitTarget, TArray<FVector_NetQuantize>& HitTargets);
 
 protected:
 
-	FVector TraceEndWithScatter(const FVector& TraceStart, const FVector& HitTarget);
 
-	void WeaponTraceHit(const FVector& TraceStart, const FVector& HitTarget, FHitResult& OutHit);
+
+	void WeaponTraceHit(const FVector& TraceStart, const FVector& HitTarget, FHitResult& OutHit, FHitResult& EffectHit);
 
 private:
 	UPROPERTY(EditAnywhere, Category = "Weapon Scatter")

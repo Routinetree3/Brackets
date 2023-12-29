@@ -11,6 +11,8 @@ class ABracketsCharacterHUD;
 class UCharacterHUDWidget;
 class ABracketsSinglesGameMode;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FHighPingDelegate, bool, bPingToHigh);
+
 UCLASS()
 class BRACKETS_API ABracketsPlayerController : public APlayerController
 {
@@ -54,6 +56,10 @@ public:
 	virtual float GetServerTime();
 	virtual void ReceivedPlayer() override;
 
+	float SingleTripTime = 0.f;
+
+	FHighPingDelegate HighPingDelegate;
+
 protected:
 	virtual void BeginPlay() override;
 	void SetHUDTime();
@@ -87,6 +93,22 @@ protected:
 	void ServerCheckMatchState();
 	UFUNCTION(Client, Reliable)
 	void ClientJoinMidgame(FName StateOfMatch, float Warmup, float Match, float Cooldown, float MatchEnd, float StartingTime);
+	
+	UPROPERTY(EditAnywhere)
+		float CheckPingFrequency = 10.f;
+	UPROPERTY(EditAnywhere)
+		float HighPingThreshold = 120.f;
+
+	UPROPERTY(EditAnywhere)
+		float HighPingDuration = 5.f;
+
+	float HighPingRunningTime = 0.f;
+
+	UFUNCTION()
+	void CheckPing(float DeltaTime);
+
+	UFUNCTION(Server, Reliable)
+	void ServerReportPingStatus(bool bHighPing);
 
 private:
 	UPROPERTY()

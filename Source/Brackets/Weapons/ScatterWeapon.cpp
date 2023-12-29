@@ -6,21 +6,20 @@
 #include "Kismet/GameplayStatics.h"
 #include "Animation/AnimationAsset.h"
 #include "Brackets/BracketsCharacter.h"
+#include "Brackets/Components/LagCompComponent.h"
+#include "Brackets/Player/BracketsPlayerController.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "Sound/SoundCue.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "WeaponTypes.h"
+#include "Brackets/Brackets.h"
 
 #include "DrawDebugHelpers.h"
 
-void AScatterWeapon::Fire(const FVector& HitTarget, bool IsAiming)
+void AScatterWeapon::FireScatter(const TArray<FVector_NetQuantize>& HitTargets, bool IsAiming)
 {
-	
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (OwnerPawn == nullptr)
-	{
-		return;
-	}
+	if (OwnerPawn == nullptr) { return; }
 	AController* InstigatorController = OwnerPawn->GetController();
 
 	bIsAiming = IsAiming;
@@ -31,85 +30,140 @@ void AScatterWeapon::Fire(const FVector& HitTarget, bool IsAiming)
 	}
 
 	const USkeletalMeshSocket* MuzzleFlashSocket = GetWeaponMesh()->GetSocketByName("Muzzle");
-	if (MuzzleFlashSocket)
+	BracketsOwnerCharacter = BracketsOwnerCharacter == nullptr ? Cast<ABracketsCharacter>(OwnerPawn) : BracketsOwnerCharacter;
+	BracketsOwnerController = BracketsOwnerController == nullptr ? Cast<ABracketsPlayerController>(InstigatorController) : BracketsOwnerController;
+	if (MuzzleFlashSocket && BracketsOwnerCharacter && BracketsOwnerController)
 	{
-		FTransform SocketTransform = MuzzleFlashSocket->GetSocketTransform(GetWeaponMesh());
-		FVector Start = SocketTransform.GetLocation();
+		const FTransform SocketTransform = MuzzleFlashSocket->GetSocketTransform(GetWeaponMesh());
+		const FVector Start = SocketTransform.GetLocation();
 
-		TMap<ABracketsCharacter*, uint32> HitMap;
+		//TMap<ABracketsCharacter*, uint32> HitMap;
+		TMap<ABracketsCharacter*, FScatterHitInfo> HitMap;
 
-		for (uint32 i = 0; i < NumberOfPellets; i++)
+		FName BoxThatWasHit;
+		FHitBoxInfo* BoxHitInfo;
+
+		for (FVector_NetQuantize HitTarget : HitTargets)
 		{
 			FHitResult FireHit;
-			WeaponTraceHit(Start, HitTarget, FireHit);
+			FHitResult EffectHit;
+			WeaponTraceHit(Start, HitTarget, FireHit, EffectHit);
 
 			ABracketsCharacter* BracketsCharacter = Cast<ABracketsCharacter>(FireHit.GetActor());
-			if (BracketsCharacter && HasAuthority() && InstigatorController)
+			if (BracketsCharacter)
 			{
+				BoxThatWasHit = FireHit.GetComponent()->GetFName();
+				BoxHitInfo = BracketsOwnerCharacter->HitBoxes.Find(BoxThatWasHit);
+				float HitDamageRatio = 1;
+				if (BoxHitInfo)
+				{
+					HitDamageRatio = BoxHitInfo->DamageRatio;
+				}
+
 				if (HitMap.Contains(BracketsCharacter))
 				{
-					HitMap[BracketsCharacter]++;
+					HitMap[BracketsCharacter].Ratios.Add(HitDamageRatio);
 				}
 				else
 				{
-					HitMap.Emplace(BracketsCharacter, 1);
+					FScatterHitInfo Info;
+					Info.Ratios.Add(HitDamageRatio);
+					HitMap.Emplace(BracketsCharacter, Info);
 				}
 			}
-			if (ImpactParticles)
+			if (EffectHit.bBlockingHit)
 			{
-				UGameplayStatics::SpawnEmitterAtLocation(
-					GetWorld(),
-					ImpactParticles,
-					FireHit.ImpactPoint,
-					FireHit.ImpactNormal.Rotation()
-				);
-			}
-			if (HitSound)
-			{
-				UGameplayStatics::PlaySoundAtLocation(
-					this,
-					HitSound,
-					FireHit.ImpactPoint,
-					.5f,
-					FMath::FRandRange(-.5f, .5f)
-				);
+				if (ImpactParticles)
+				{
+					UGameplayStatics::SpawnEmitterAtLocation(
+						GetWorld(),
+						ImpactParticles,
+						EffectHit.ImpactPoint,
+						EffectHit.ImpactNormal.Rotation()
+					);
+				}
+				if (HitSound)
+				{
+					UGameplayStatics::PlaySoundAtLocation(
+						this,
+						HitSound,
+						EffectHit.ImpactPoint,
+						.5f,
+						FMath::FRandRange(-.5f, .5f)
+					);
+				}
 			}
 		}
+		TArray<ABracketsCharacter*> HitCharacters;
 		for (auto HitPair : HitMap)
 		{
-			if (HitPair.Key && HasAuthority() && InstigatorController)
+			if (HitPair.Key && InstigatorController)
 			{
-				UGameplayStatics::ApplyDamage(
-					HitPair.Key,
-					Damage * HitPair.Value,
-					InstigatorController,
-					this,
-					UDamageType::StaticClass()
+				bool bCauseAuthDamage = !bUseServerRewind || OwnerPawn->IsLocallyControlled();
+				if (HasAuthority() && bCauseAuthDamage)
+				{
+					float ShotDamage = 0.f;
+					for (auto Ratio : HitPair.Value.Ratios)
+					{
+						ShotDamage += Damage * Ratio;
+						UE_LOG(LogTemp, Warning, TEXT("ShotDamage: %f"), ShotDamage)
+					}
+					UGameplayStatics::ApplyDamage(
+						HitPair.Key, //HitCharacter
+						ShotDamage,
+						InstigatorController,
+						this,
+						UDamageType::StaticClass()
+					);
+					UE_LOG(LogTemp, Warning, TEXT("ApplyDamage: %f"), ShotDamage)
+				}
+				HitCharacters.Add(HitPair.Key);
+			}
+		}
+		if (!HasAuthority() && bUseServerRewind)
+		{
+			if (BracketsOwnerCharacter && BracketsOwnerController && BracketsOwnerCharacter->GetLagComp() && BracketsOwnerCharacter->IsLocallyControlled())
+			{
+				BracketsOwnerCharacter->GetLagComp()->ServerScatterScoreRequest(
+					HitCharacters,
+					Start,
+					HitTargets,
+					BracketsOwnerController->GetServerTime() - BracketsOwnerController->SingleTripTime,
+					this
 				);
 			}
 		}
+		SpendRound();
 	}
-	SpendRound();
 }
 
-void AScatterWeapon::WeaponTraceHit(const FVector& TraceStart, const FVector& HitTarget, FHitResult& OutHit)
+void AScatterWeapon::WeaponTraceHit(const FVector& TraceStart, const FVector& HitTarget, FHitResult& OutHit, FHitResult& EffectHit)
 {
 	
 	UWorld* World = GetWorld();
 	if (World)
 	{
-		FVector End = bUseScatter ? TraceEndWithScatter(TraceStart, HitTarget) : TraceStart + (HitTarget - TraceStart) * 1.25f;
+		FVector End = TraceStart + (HitTarget - TraceStart) * 1.05f;
 		World->LineTraceSingleByChannel(
 			OutHit,
 			TraceStart,
 			End,
-			ECollisionChannel::ECC_Visibility
+			ECC_HitBox
 		);
+
 		DrawDebugLine(GetWorld(), TraceStart, End, FColor::Blue, true);
+
+		World->LineTraceSingleByChannel(
+			EffectHit,
+			TraceStart,
+			End,
+			ECC_Visibility
+		);
+
 		FVector BeamEnd = End;
-		if (OutHit.bBlockingHit)
+		if (EffectHit.bBlockingHit)
 		{
-			BeamEnd = OutHit.ImpactPoint;
+			BeamEnd = EffectHit.ImpactPoint;
 		}
 		if (BeamParticles)
 		{
@@ -127,9 +181,14 @@ void AScatterWeapon::WeaponTraceHit(const FVector& TraceStart, const FVector& Hi
 	}
 }
 
-FVector AScatterWeapon::TraceEndWithScatter(const FVector& TraceStart, const FVector& HitTarget)
+/*FVector AScatterWeapon::TraceEndWithScatter(const FVector& HitTarget)
 {
-	
+	const USkeletalMeshSocket* MuzzleFlashSocket = GetWeaponMesh()->GetSocketByName("Muzzle");
+	if (MuzzleFlashSocket == nullptr) return FVector();
+
+	FTransform SocketTransform = MuzzleFlashSocket->GetSocketTransform(GetWeaponMesh());
+	FVector TraceStart = SocketTransform.GetLocation();
+
 	FVector ToTargetNormalized = (HitTarget - TraceStart).GetSafeNormal();
 	FVector SphereCenter = TraceStart + ToTargetNormalized * DistanceToSphere;
 	FVector RandVec = UKismetMathLibrary::RandomUnitVector() * FMath::FRandRange(0.f, SphereRadius);
@@ -143,4 +202,26 @@ FVector AScatterWeapon::TraceEndWithScatter(const FVector& TraceStart, const FVe
 
 
 	return FVector(TraceStart + ToEndLoc * TRACE_LENGTH / ToEndLoc.Size());
+}*/
+
+void AScatterWeapon::FillScatteredHitTargets(const FVector& HitTarget, TArray<FVector_NetQuantize>& HitTargets)
+{
+	const USkeletalMeshSocket* MuzzleFlashSocket = GetWeaponMesh()->GetSocketByName("Muzzle");
+	if (MuzzleFlashSocket == nullptr) return;
+
+	FTransform SocketTransform = MuzzleFlashSocket->GetSocketTransform(GetWeaponMesh());
+	FVector TraceStart = SocketTransform.GetLocation();
+
+	FVector ToTargetNormalized = (HitTarget - TraceStart).GetSafeNormal();
+	FVector SphereCenter = TraceStart + ToTargetNormalized * DistanceToSphere;
+
+	for (uint32 index = 0; index < NumberOfPellets; index++)
+	{
+		FVector RandVec = UKismetMathLibrary::RandomUnitVector() * FMath::FRandRange(0.f, SphereRadius);
+		FVector EndLoc = SphereCenter + RandVec;
+		FVector ToEndLoc = EndLoc - TraceStart;
+		ToEndLoc = TraceStart + ToEndLoc * TRACE_LENGTH / ToEndLoc.Size();
+
+		HitTargets.Add(ToEndLoc);
+	}
 }

@@ -8,6 +8,7 @@
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Brackets/Weapons/Weapon.h"
+#include "Brackets/Weapons/ThrowableProjectile.h"
 
 bool UEquipmentSelectionWidget::Initialize()
 {
@@ -80,6 +81,24 @@ bool UEquipmentSelectionWidget::NonLethalButtonClicked(TSubclassOf<class AThrowa
 	else
 	{
 		return false;
+	}
+}
+
+void UEquipmentSelectionWidget::DeleteThrowable(TSubclassOf<class AThrowableProjectile> SelectedThrowable)
+{
+	if (Character && Character->GetCombat())
+	{
+		if (SelectedThrowable.GetDefaultObject())
+		{
+			if (SelectedThrowable.GetDefaultObject()->GetWeaponType() == EWeaponType::EWT_LethalGranade)
+			{
+				Character->GetCombat()->DropLethal(SelectedThrowable);
+			}
+			else if (SelectedThrowable.GetDefaultObject()->GetWeaponType() == EWeaponType::EWT_NonLethalGranade)
+			{
+				Character->GetCombat()->DropNonLethal(SelectedThrowable);
+			}
+		}
 	}
 }
 

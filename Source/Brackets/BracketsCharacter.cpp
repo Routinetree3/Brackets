@@ -14,12 +14,15 @@
 #include "Components/WidgetComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Brackets/Components/CombatComponent.h"
+#include "Brackets/Components/LagCompComponent.h"
 #include "Brackets/Character/BracketsAnimInstance.h"
 #include "Brackets/Player/BracketsPlayerController.h"
 #include "Brackets/Player/BracketsPlayerState.h"
 #include "Gameframework/CharacterMovementComponent.h"
 #include "Brackets/HUD/BracketsCharacterHUD.h"
 #include "Brackets/GameModes/BracketsSinglesGameMode.h"
+#include "Components/BoxComponent.h"
+#include "Brackets.h"
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -46,6 +49,8 @@ ABracketsCharacter::ABracketsCharacter()
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("CombatComponent"));
 	Combat->SetIsReplicated(true);
 
+	LagComp = CreateDefaultSubobject<ULagCompComponent>(TEXT("LagCompComponent"));
+
 	GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
 
 	// Create a mesh component that will be used when being viewed from a '1st person' view (when controlling this pawn)
@@ -56,7 +61,6 @@ ABracketsCharacter::ABracketsCharacter()
 	Mesh1P->CastShadow = false;
 	Mesh1P->SetRelativeLocation(FVector(-30.f, 0.f, -150.f));
 
-	//GetMesh() = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh3P"));
 	GetMesh()->SetOnlyOwnerSee(false);
 	GetMesh()->SetOwnerNoSee(true);
 	GetMesh()->SetupAttachment(GetCapsuleComponent());
@@ -64,6 +68,127 @@ ABracketsCharacter::ABracketsCharacter()
 	GetMesh()->CastShadow = true;
 
 	ShieldTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("Timeline"));
+
+	/*
+	HitBoxes
+	*/
+	FHitBoxInfo HitBox;
+
+	head = CreateDefaultSubobject<UBoxComponent>(TEXT("head"));
+	head->SetupAttachment(GetMesh(), FName("head_x"));
+	HitBox.HitBoxComponent = head;
+	HitBox.DamageRatio = Head_DamageRatio;
+	HitBoxes.Add(FName("head"), HitBox);
+
+	pelvis = CreateDefaultSubobject<UBoxComponent>(TEXT("pelvis"));
+	pelvis->SetupAttachment(GetMesh(), FName("root_x"));
+	HitBox.HitBoxComponent = pelvis;
+	HitBox.DamageRatio = Pelvis_DamageRatio;
+	HitBoxes.Add(FName("pelvis"), HitBox);
+
+	spine_01 = CreateDefaultSubobject<UBoxComponent>(TEXT("spine_01"));
+	spine_01->SetupAttachment(GetMesh(), FName("spine_01_x"));
+	HitBox.HitBoxComponent = spine_01;
+	HitBox.DamageRatio = spine_01_DamageRatio;
+	HitBoxes.Add(FName("spine_01"), HitBox);
+
+	spine_02 = CreateDefaultSubobject<UBoxComponent>(TEXT("spine_02"));
+	spine_02->SetupAttachment(GetMesh(), FName("spine_02_x"));
+	HitBox.HitBoxComponent = spine_02;
+	HitBox.DamageRatio = spine_02_DamageRatio;
+	HitBoxes.Add(FName("spine_02"), HitBox);
+
+	spine_03 = CreateDefaultSubobject<UBoxComponent>(TEXT("spine_03"));
+	spine_03->SetupAttachment(GetMesh(), FName("spine_03_x"));
+	HitBox.HitBoxComponent = spine_03;
+	HitBox.DamageRatio = spine_03_DamageRatio;
+	HitBoxes.Add(FName("spine_03"), HitBox);
+
+	//left
+	arm_stretch_l = CreateDefaultSubobject<UBoxComponent>(TEXT("arm_stretch_l"));
+	arm_stretch_l->SetupAttachment(GetMesh(), FName("arm_stretch_l"));
+	HitBox.HitBoxComponent = arm_stretch_l;
+	HitBox.DamageRatio = arm_stretch_l_DamageRatio;
+	HitBoxes.Add(FName("arm_stretch_l"), HitBox);
+
+	forearm_stretch_l = CreateDefaultSubobject<UBoxComponent>(TEXT("forearm_stretch_l"));
+	forearm_stretch_l->SetupAttachment(GetMesh(), FName("forearm_stretch_l"));
+	HitBox.HitBoxComponent = forearm_stretch_l;
+	HitBox.DamageRatio = forearm_stretch_l_DamageRatio;
+	HitBoxes.Add(FName("forearm_stretch_l"), HitBox);
+
+	hand_l = CreateDefaultSubobject<UBoxComponent>(TEXT("hand_l"));
+	hand_l->SetupAttachment(GetMesh(), FName("hand_l"));
+	HitBox.HitBoxComponent = hand_l;
+	HitBox.DamageRatio = hand_l_DamageRatio;
+	HitBoxes.Add(FName("hand_l"), HitBox);
+
+	thigh_stretch_l = CreateDefaultSubobject<UBoxComponent>(TEXT("thigh_stretch_l"));
+	thigh_stretch_l->SetupAttachment(GetMesh(), FName("thigh_stretch_l"));
+	HitBox.HitBoxComponent = thigh_stretch_l;
+	HitBox.DamageRatio = thigh_stretch_l_DamageRatio;
+	HitBoxes.Add(FName("thigh_stretch_l"), HitBox);
+
+	leg_stretch_l = CreateDefaultSubobject<UBoxComponent>(TEXT("leg_stretch_l"));
+	leg_stretch_l->SetupAttachment(GetMesh(), FName("leg_stretch_l"));
+	HitBox.HitBoxComponent = leg_stretch_l;
+	HitBox.DamageRatio = leg_stretch_l_DamageRatio;
+	HitBoxes.Add(FName("leg_stretch_l"), HitBox);
+
+	foot_l = CreateDefaultSubobject<UBoxComponent>(TEXT("foot_l"));
+	foot_l->SetupAttachment(GetMesh(), FName("foot_l"));
+	HitBox.HitBoxComponent = foot_l;
+	HitBox.DamageRatio = foot_l_DamageRatio;
+	HitBoxes.Add(FName("foot_l"), HitBox);
+
+
+	//right
+	arm_stretch_r = CreateDefaultSubobject<UBoxComponent>(TEXT("arm_stretch_r"));
+	arm_stretch_r->SetupAttachment(GetMesh(), FName("arm_stretch_r"));
+	HitBox.HitBoxComponent = arm_stretch_r;
+	HitBox.DamageRatio = arm_stretch_r_DamageRatio;
+	HitBoxes.Add(FName("arm_stretch_r"), HitBox);
+
+	forearm_stretch_r = CreateDefaultSubobject<UBoxComponent>(TEXT("forearm_stretch_r"));
+	forearm_stretch_r->SetupAttachment(GetMesh(), FName("forearm_stretch_r"));
+	HitBox.HitBoxComponent = forearm_stretch_r;
+	HitBox.DamageRatio = forearm_stretch_r_DamageRatio;
+	HitBoxes.Add(FName("forearm_stretch_r"), HitBox);
+
+	hand_r = CreateDefaultSubobject<UBoxComponent>(TEXT("hand_r"));
+	hand_r->SetupAttachment(GetMesh(), FName("hand_r"));
+	HitBox.HitBoxComponent = hand_r;
+	HitBox.DamageRatio = hand_r_DamageRatio;
+	HitBoxes.Add(FName("hand_r"), HitBox);
+
+	thigh_stretch_r = CreateDefaultSubobject<UBoxComponent>(TEXT("thigh_stretch_r"));
+	thigh_stretch_r->SetupAttachment(GetMesh(), FName("thigh_stretch_r"));
+	HitBox.HitBoxComponent = thigh_stretch_r;
+	HitBox.DamageRatio = thigh_stretch_r_DamageRatio;
+	HitBoxes.Add(FName("thigh_stretch_r"), HitBox);
+
+	leg_stretch_r = CreateDefaultSubobject<UBoxComponent>(TEXT("leg_stretch_r"));
+	leg_stretch_r->SetupAttachment(GetMesh(), FName("leg_stretch_r"));
+	HitBox.HitBoxComponent = leg_stretch_r;
+	HitBox.DamageRatio = leg_stretch_r_DamageRatio;
+	HitBoxes.Add(FName("leg_stretch_r"), HitBox);
+
+	foot_r = CreateDefaultSubobject<UBoxComponent>(TEXT("foot_r"));
+	foot_r->SetupAttachment(GetMesh(), FName("foot_r"));
+	HitBox.HitBoxComponent = foot_r;
+	HitBox.DamageRatio = foot_r_DamageRatio;
+	HitBoxes.Add(FName("foot_r"), HitBox);
+
+	for (auto Box : HitBoxes)
+	{
+		if (Box.Value.HitBoxComponent)
+		{
+			Box.Value.HitBoxComponent->SetCollisionObjectType(ECC_HitBox);
+			Box.Value.HitBoxComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
+			Box.Value.HitBoxComponent->SetCollisionResponseToChannel(ECC_HitBox, ECollisionResponse::ECR_Block);
+			Box.Value.HitBoxComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		}
+	}
 }
 
 void ABracketsCharacter::BeginPlay()
@@ -197,6 +322,14 @@ void ABracketsCharacter::PostInitializeComponents()
 	if (Combat)
 	{
 		Combat->Character = this;
+	}
+	if (LagComp)
+	{
+		LagComp->Character = this;
+		if (Controller)
+		{
+			LagComp->Controller = Cast<ABracketsPlayerController>(Controller);
+		}
 	}
 }
 

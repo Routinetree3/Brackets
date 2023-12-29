@@ -31,6 +31,8 @@ protected:
 		bool LethalButtonClicked(TSubclassOf<class AThrowableProjectile> SelectedThrowable);
 	UFUNCTION(BlueprintCallable)
 		bool NonLethalButtonClicked(TSubclassOf<class AThrowableProjectile> SelectedThrowable);
+	UFUNCTION(BlueprintCallable)
+	void DeleteThrowable(TSubclassOf<class AThrowableProjectile> SelectedThrowable);
 
 	UFUNCTION(BlueprintCallable)
 	void ShieldButtonClicked(bool isFull);

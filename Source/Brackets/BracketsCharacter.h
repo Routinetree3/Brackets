@@ -24,6 +24,21 @@ class ABracketsGameMode;
 class UCurvefloat;
 class UCurveVector;
 
+class UBoxComponent;
+
+USTRUCT(BlueprintType)
+struct FHitBoxInfo
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY()
+		float DamageRatio = 0.f;
+
+	UPROPERTY()
+		UBoxComponent* HitBoxComponent;
+};
+
 UCLASS(config=Game)
 class ABracketsCharacter : public ACharacter
 {
@@ -211,6 +226,8 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class UCombatComponent* Combat;
+	UPROPERTY(VisibleAnywhere)
+		class ULagCompComponent* LagComp;
 
 	UPROPERTY(VisibleAnywhere, Category = Camera)
 	class USpringArmComponent* CameraBoom;
@@ -281,6 +298,7 @@ public:
 	FVector GetHitTarget() const;
 	bool IsWeaponEquipped();
 	FORCEINLINE UCombatComponent* GetCombat() const { return Combat; }
+	FORCEINLINE ULagCompComponent* GetLagComp() const { return LagComp; }
 	FORCEINLINE bool GetDisableGameplay() const { return bDisableGameplay; }
 	FORCEINLINE float GetHealth() const { return Health; }
 	FORCEINLINE float GetMaxHealth() const { return MaxHealth; }
@@ -288,6 +306,7 @@ public:
 	FORCEINLINE float GetMaxShield() const { return MaxShield; }
 	FORCEINLINE float GetAO_Pitch() const { return AO_Pitch; }
 	FORCEINLINE float GetAO_Yaw() const { return AO_Yaw; }
+	FORCEINLINE UBoxComponent* GetHead() const { return head; }
 
 	int32 GetCurrentLethals() const;
 	int32 GetCurrentNonLethals() const;
@@ -296,5 +315,100 @@ public:
 	int32 GetMaxThrowables() const;
 	int32 GetRoundsFired() const;
 	ECombatState GetCombatState() const;
+
+	//Section for HitBoxes
+protected:
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* head;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float Head_DamageRatio = 2.f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* pelvis;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float Pelvis_DamageRatio = 1.f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* spine_01;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float spine_01_DamageRatio = 1.f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* spine_02;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float spine_02_DamageRatio = 1.f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* spine_03;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float spine_03_DamageRatio = 1.f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* arm_stretch_l;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float arm_stretch_l_DamageRatio = 0.75f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* forearm_stretch_l;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float forearm_stretch_l_DamageRatio = 0.60f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* hand_l;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float hand_l_DamageRatio = 0.40f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* arm_stretch_r;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float arm_stretch_r_DamageRatio = 0.75f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* forearm_stretch_r;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float forearm_stretch_r_DamageRatio = 0.60f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* hand_r;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float hand_r_DamageRatio = 0.40f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* thigh_stretch_l;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float thigh_stretch_l_DamageRatio = 0.85f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* leg_stretch_l;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float leg_stretch_l_DamageRatio = 0.75f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* foot_l;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float foot_l_DamageRatio = 0.60f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* thigh_stretch_r;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float thigh_stretch_r_DamageRatio = 0.85f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* leg_stretch_r;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float leg_stretch_r_DamageRatio = 0.75f;
+
+	UPROPERTY(EditAnywhere)
+		UBoxComponent* foot_r;
+	UPROPERTY(EditAnywhere, Category = "HitBoxes")
+		float foot_r_DamageRatio = 0.60f;
+
+public:
+	/*UPROPERTY()
+		TMap<FName, class UBoxComponent*> HitBoxes;*/
+
+	UPROPERTY()
+		TMap<FName, FHitBoxInfo> HitBoxes;
+
 };
 

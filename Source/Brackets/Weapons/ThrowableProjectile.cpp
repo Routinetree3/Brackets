@@ -176,3 +176,7 @@ void AThrowableProjectile::Destroyed()
 	Super::Destroyed();
 }
 
+FString AThrowableProjectile::GetThrowTypeName()
+{
+	return UEnum::GetValueAsString<EThrowableType>(ThrowableType);
+}

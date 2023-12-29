@@ -14,6 +14,19 @@ class UParticleSystemComponent;
 class USoundCue;
 class UTexture2D;
 
+UENUM(BlueprintType)
+enum class EThrowableType : uint8
+{
+	ETT_Explosive UMETA(DisplayName = "ExplosiveGranade"),
+	ETT_Knife UMETA(DisplayName = "ThrowingKnife"),
+
+	ETT_Smoke UMETA(DisplayName = "SmokeGranade"),
+	ETT_Flash UMETA(DisplayName = "FlashGranade"),
+	ETT_Decoy UMETA(DisplayName = "DecoyGranade"),
+
+	ETT_MAX UMETA(DisplayName = "DefaultMAX"),
+};
+
 UCLASS()
 class BRACKETS_API AThrowableProjectile : public AActor
 {
@@ -76,6 +89,8 @@ protected:
 
 	UPROPERTY(EditAnywhere)
 		EWeaponType WeaponType;
+	UPROPERTY(EditAnywhere)
+		EThrowableType ThrowableType;
 	UPROPERTY(VisibleAnywhere)
 		UStaticMeshComponent* Mesh;
 	UPROPERTY(EditAnywhere)
@@ -88,5 +103,7 @@ public:
 	FORCEINLINE UStaticMeshComponent* GetMesh() const { return Mesh; }
 	FORCEINLINE EWeaponType GetWeaponType() const { return WeaponType; }
 	FORCEINLINE UTexture2D* GetSilhouette() const { return Silhouette; }
+	FORCEINLINE EThrowableType GetThrowableType() const { return ThrowableType; }
+	FString GetThrowTypeName();
 
 };

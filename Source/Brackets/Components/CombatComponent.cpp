@@ -13,6 +13,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Gameframework/CharacterMovementComponent.h"
 #include "Brackets/Weapons/Weapon.h"
+#include "Brackets/Weapons/ScatterWeapon.h"
 #include "Brackets/Weapons/ThrowableProjectile.h"
 #include "Brackets/BracketsCharacter.h"
 #include "Brackets/Player/BracketsPlayerController.h"
@@ -26,6 +27,9 @@ UCombatComponent::UCombatComponent()
 
 	BaseWalkSpeed = 600.f;
 	AimWalkSpeed = 450.f;
+
+	LethalSlotArray.Reserve(2);
+	NonLethalSlotArray.Reserve(2);
 }
 
 void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -425,76 +429,28 @@ void UCombatComponent::OnRep_EquipActiveWeapon()
 	}
 }
 
-void UCombatComponent::EquipThrowable(TSubclassOf<AThrowableProjectile> ThrowableToEquip, bool bIsLeathal)
+void UCombatComponent::EquipThrowable(TSubclassOf<class AThrowableProjectile> ThrowableToEquip, bool bIsLeathal)
 {
 	if (Character == nullptr || ThrowableToEquip == nullptr) { return; }
 	if (CurrentNonLethals + CurrentLethals >= MaxThowables) { return; }
 	Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
 
-	UE_LOG(LogTemp, Error, TEXT("EquipThrowable"));
-
 	if (bIsLeathal && CurrentLethals <= MaxLethals)
 	{
-		switch (LethalSlotArrayIndex)
+		LethalSlotArray.Add(ThrowableToEquip);
+		CurrentLethals = LethalSlotArray.Num();
+		if (Controller)
 		{
-		case 0:
-			LethalSlotArray.Insert(ThrowableToEquip, LethalSlotArrayIndex);
-			CurrentLethals++;
-			if (Controller)
-			{
-				Controller->SetLethalHUDIcon(LethalSlotArray);
-			}
-			break;
-		case 1:
-			LethalSlotArray.Insert(ThrowableToEquip, LethalSlotArrayIndex);
-			CurrentLethals++;
-			if (Controller)
-			{
-				Controller->SetLethalHUDIcon(LethalSlotArray);
-			}
-			break;
-		default:
-			break;
-		}
-		if (LethalSlotArrayIndex >= MaxLethals - 1)
-		{
-			LethalSlotArrayIndex = 0;
-		}
-		else
-		{
-			LethalSlotArrayIndex++;
+			Controller->SetLethalHUDIcon(LethalSlotArray);
 		}
 	}
 	else if (!bIsLeathal && CurrentNonLethals <= MaxNonLethals)
 	{
-		switch (NonLethalSlotArrayIndex)
+		NonLethalSlotArray.Add(ThrowableToEquip);
+		CurrentNonLethals = NonLethalSlotArray.Num();
+		if (Controller)
 		{
-		case 0:
-			NonLethalSlotArray.Insert(ThrowableToEquip, NonLethalSlotArrayIndex);
-			CurrentNonLethals++;
-			if (Controller)
-			{
-				Controller->SetNonLethalHUDIcon(NonLethalSlotArray);
-			}
-			break;
-		case 1:
-			NonLethalSlotArray.Insert(ThrowableToEquip, NonLethalSlotArrayIndex);
-			CurrentNonLethals++;
-			if (Controller)
-			{
-				Controller->SetNonLethalHUDIcon(NonLethalSlotArray);
-			}
-			break;
-		default:
-			break;
-		}
-		if (NonLethalSlotArrayIndex >= MaxNonLethals - 1)
-		{
-			NonLethalSlotArrayIndex = 0;
-		}
-		else
-		{
-			NonLethalSlotArrayIndex++;
+			Controller->SetNonLethalHUDIcon(NonLethalSlotArray);
 		}
 	}
 }
@@ -586,7 +542,6 @@ void UCombatComponent::SwapLethals()
 		{
 			Controller->SetLethalHUDIcon(LethalSlotArray);
 		}
-		UE_LOG(LogTemp, Warning, TEXT("SwapLethals"));
 	}
 }
 
@@ -606,7 +561,6 @@ void UCombatComponent::SwapNonLethals()
 		{
 			Controller->SetNonLethalHUDIcon(NonLethalSlotArray);
 		}
-		UE_LOG(LogTemp, Warning, TEXT("SwapNonLethals"));
 	}
 }
 
@@ -640,12 +594,22 @@ void UCombatComponent::CycleEquipment(int32 InputValue)
 
 }
 
-void UCombatComponent::DropEquippedWeapon(bool bIsPrimary) ////// REDU!!!!
+void UCombatComponent::DropEquippedWeapon(bool bIsPrimary)
 {
+	if (Controller)
+	{
+		Controller->SetHUDWeaponAmmo(0);
+		Controller->SetHUDAmmoCarried(0);
+	}
 	if (SelectedWeapon && SelectedWeapon3P && bIsPrimary)
 	{
 		SelectedWeapon->Dropped();
 		SelectedWeapon3P->Dropped();
+	}
+	if (HolsteredPrimaryWeapon && HolsteredPrimaryWeapon3P && bIsPrimary)
+	{
+		HolsteredPrimaryWeapon->Dropped();
+		HolsteredPrimaryWeapon3P->Dropped();
 	}
 	if (HolsteredSecondaryWeapon && HolsteredSecondaryWeapon3P && !bIsPrimary)
 	{
@@ -654,13 +618,64 @@ void UCombatComponent::DropEquippedWeapon(bool bIsPrimary) ////// REDU!!!!
 	}
 }
 
+void UCombatComponent::DropLethal(TSubclassOf<class AThrowableProjectile> SelectedThrowable)
+{
+	if (LethalSlotArray.Num() > 0)
+	{
+		//FString Name = SelectedThrowable.GetDefaultObject()->GetThrowTypeName();
+		//UE_LOG(LogTemp, Warning, TEXT("Name: %s"), *Name);
+		if (LethalSlotArray[0].GetDefaultObject()->GetThrowableType() == SelectedThrowable.GetDefaultObject()->GetThrowableType())
+		{
+			LethalSlotArray.RemoveAt(0);
+		}
+		else if(LethalSlotArray.Num() > 1)
+		{
+			if (LethalSlotArray[1].GetDefaultObject()->GetThrowableType() == SelectedThrowable.GetDefaultObject()->GetThrowableType())
+			{
+				LethalSlotArray.RemoveAt(1);
+			}
+			else { return; }
+		}
+		else { return; }
+		Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
+		if (Controller)
+		{
+			Controller->SetLethalHUDIcon(LethalSlotArray);
+		}
+		CurrentLethals--;
+	}
+}
+
+void UCombatComponent::DropNonLethal(TSubclassOf<class AThrowableProjectile> SelectedThrowable)
+{
+	if (NonLethalSlotArray.Num() > 0)
+	{
+		if (NonLethalSlotArray[0].GetDefaultObject()->GetThrowableType() == SelectedThrowable.GetDefaultObject()->GetThrowableType())
+		{
+			NonLethalSlotArray.RemoveAt(0);
+		}
+		else if (NonLethalSlotArray.Num() > 1)
+		{
+			if (NonLethalSlotArray[1].GetDefaultObject()->GetThrowableType() == SelectedThrowable.GetDefaultObject()->GetThrowableType())
+			{
+				NonLethalSlotArray.RemoveAt(1);
+			}
+			else { return; }
+		}
+		else { return; }
+		Controller = Controller == nullptr ? Cast<ABracketsPlayerController>(Character->Controller) : Controller;
+		if (Controller)
+		{
+			Controller->SetNonLethalHUDIcon(NonLethalSlotArray);
+		}
+		CurrentNonLethals--;
+	}
+}
+
 void UCombatComponent::ClearThrowables()
 {
 	LethalSlotArray.Empty();
 	NonLethalSlotArray.Empty();
-
-	LethalSlotArrayIndex = 0;
-	NonLethalSlotArrayIndex = 0;
 	CurrentLethals = 0;
 	CurrentNonLethals = 0;
 
@@ -726,10 +741,25 @@ void UCombatComponent::FireButtonPressed(bool bPressed)
 
 void UCombatComponent::Fire()
 {
-	if (CanFire())
+	if (SelectedWeapon && CanFire() && Character)
 	{
 		RoundsFired++;
-		ServerFire(HitTarget);
+		if (SelectedWeapon->GetWeaponType() == EWeaponType::EWT_Shotgun)
+		{
+			AScatterWeapon* ScatterWeapon = Cast<AScatterWeapon>(SelectedWeapon);
+			if (ScatterWeapon)
+			{
+				TArray<FVector_NetQuantize> HitTargets;
+				ScatterWeapon->FillScatteredHitTargets(HitTarget, HitTargets);
+				if (!Character->HasAuthority()) LocalScatterFire(HitTargets);
+				ServerScatterFire(HitTargets, SelectedWeapon->GetFireDelay());
+			}
+		}
+		else
+		{
+			if (!Character->HasAuthority()) LocalFire(HitTarget);
+			ServerFire(HitTarget, SelectedWeapon->GetFireDelay());
+		}
 		if (SelectedWeapon)
 		{
 			bCanFire = false;
@@ -779,22 +809,70 @@ bool UCombatComponent::CanFire()
 	return !SelectedWeapon->IsEmpty() && bCanFire && CombatState == ECombatState::ECS_Unoccupied;
 }
 
-void UCombatComponent::ServerFire_Implementation(const FVector_NetQuantize& TraceHitTarget)
+void UCombatComponent::LocalFire(const FVector_NetQuantize& TraceHitTarget)
+{
+	if (SelectedWeapon == nullptr || Character == nullptr) return;
+	if (CombatState == ECombatState::ECS_Reloading || CombatState == ECombatState::ECS_Unoccupied)
+	{
+		//Character->PlayerFireMontage(bAiming);
+		UE_LOG(LogTemp, Error, TEXT("LocalFire"));
+		SelectedWeapon->Fire(TraceHitTarget, bAiming);
+		CombatState = ECombatState::ECS_Unoccupied;
+	}
+}
+
+bool UCombatComponent::ServerFire_Validate(const FVector_NetQuantize& TraceHitTarget, float FireDelay)
+{
+	if (SelectedWeapon)
+	{
+		bool bNearlyEqual = FMath::IsNearlyEqual(SelectedWeapon->FireDelay, FireDelay, 0.01f);
+		return bNearlyEqual;
+	}
+	return true;
+}
+
+void UCombatComponent::ServerFire_Implementation(const FVector_NetQuantize& TraceHitTarget, float FireDelay)
 {
 	MulticastFire(TraceHitTarget);
 }
 
 void UCombatComponent::MulticastFire_Implementation(const FVector_NetQuantize& TraceHitTarget)
 {
-	if (SelectedWeapon == nullptr)
+	if (Character&& Character->IsLocallyControlled() && !Character->HasAuthority()) return;
+	LocalFire(TraceHitTarget);
+}
+
+void UCombatComponent::LocalScatterFire(const TArray<FVector_NetQuantize>& TraceHitTargets)
+{
+	if (SelectedWeapon == nullptr || Character == nullptr) return;
+	AScatterWeapon* ScatterWeapon = Cast<AScatterWeapon>(SelectedWeapon);
+	if (CombatState == ECombatState::ECS_Reloading || CombatState == ECombatState::ECS_Unoccupied)
 	{
-		return;
+		//Character->PlayerFireMontage(bAiming);
+		ScatterWeapon->FireScatter(TraceHitTargets, bAiming);
+		CombatState = ECombatState::ECS_Unoccupied;
 	}
-	if (Character && CombatState == ECombatState::ECS_Unoccupied)
+}
+
+bool UCombatComponent::ServerScatterFire_Validate(const TArray<FVector_NetQuantize>& TraceHitTargets, float FireDelay)
+{
+	if (SelectedWeapon)
 	{
-		//Character->PlayFireMontage(bAiming);
-		SelectedWeapon->Fire(TraceHitTarget, bAiming);
+		bool bNearlyEqual = FMath::IsNearlyEqual(SelectedWeapon->FireDelay, FireDelay, 0.01f);
+		return bNearlyEqual;
 	}
+	return true;
+}
+
+void UCombatComponent::ServerScatterFire_Implementation(const TArray<FVector_NetQuantize>& TraceHitTargets, float FireDelay)
+{
+	MulticasScatterFire(TraceHitTargets);
+}
+
+void UCombatComponent::MulticasScatterFire_Implementation(const TArray<FVector_NetQuantize>& TraceHitTargets)
+{
+	if (Character && Character->IsLocallyControlled() && !Character->HasAuthority()) return;
+	LocalScatterFire(TraceHitTargets);
 }
 
 void UCombatComponent::ThrowLethal()
